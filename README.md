@@ -87,7 +87,7 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
 1. Set up a Python virtual environment:
    ```bash
    cd model
-   python -m venv venv
+   python -m venv my_project_env
    
    # Activate on Windows
    venv\Scripts\activate
@@ -115,7 +115,7 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
    cd web
    npm run dev
    ```
-
+   
 2. Open your browser and navigate to `http://localhost:3000`
 
 ### Model API
@@ -141,8 +141,8 @@ The API will be available at `http://localhost:5000`
 - Python
 - TensorFlow/PyTorch
 - OpenCV
+- Mediapipe
 - Scikit-learn
-- Flask/FastAPI for API
 
 ## Features
 
