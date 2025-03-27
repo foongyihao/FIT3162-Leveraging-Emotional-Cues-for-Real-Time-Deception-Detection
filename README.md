@@ -98,11 +98,13 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
 
 2. Install the required Python packages:
    ```bash
+   cd model
    pip install -r requirements.txt
    ```
 
 3. Download the pre-trained model (if available):
    ```bash
+   cd model
    python src/download_model.py
    ```
 
@@ -117,16 +119,6 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
    ```
    
 2. Open your browser and navigate to `http://localhost:3000`
-
-### Model API
-
-1. Start the model API server:
-   ```bash
-   cd model
-   python src/api.py
-   ```
-
-The API will be available at `http://localhost:5000`
 
 ## Technologies Used
 
