@@ -136,6 +136,10 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
 - Mediapipe
 - Scikit-learn
 
+## Preprocessed Datasets
+The preprocessed datasets used for training and testing the model can be found in the following Google Drive folder:
+https://drive.google.com/drive/u/1/folders/1oOCvq37bn4Dg8MdXT3XoRhu-ClcbCMIG
+
 ## Features
 
 - Real-time deception detection using facial micro-expressions
