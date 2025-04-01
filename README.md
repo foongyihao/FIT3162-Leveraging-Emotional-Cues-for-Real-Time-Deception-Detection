@@ -61,6 +61,44 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
 - **Additional Dependencies**
 
   - CUDA and cuDNN (for GPU acceleration with NVIDIA GPUs)
+  - Git Large File Storage (Git LFS)
+
+### Installing Git LFS
+
+Git LFS is used to efficiently handle large files such as videos, datasets, and model weights. This project tracks the following file types using Git LFS: `mp4`, `zip`, `csv`, `wmv`, `keras` and `npy`.
+
+1. Install Git LFS:
+
+   ```bash
+   # On macOS
+   brew install git-lfs
+
+   # On Ubuntu
+   sudo apt-get install git-lfs
+
+   # On Windows (using Chocolatey)
+   choco install git-lfs
+
+   # On Windows (using winget)
+   winget install --id Git.GitLFS
+   ```
+
+2. Initialize Git LFS in the repository:
+
+   ```bash
+   git lfs install
+   ```
+
+3. Pull the large files after cloning the repository:
+
+   ```bash
+   git lfs pull
+   ```
+
+4. Tracking additional large files
+    ```bash
+       git lfs track ".[your large file extension]"
+    ```
 
 ### Web Application Setup
 
