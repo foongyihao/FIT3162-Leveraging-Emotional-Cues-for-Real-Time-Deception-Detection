@@ -1,0 +1,12 @@
+# ===================================================================================================
+# This requirements file is used to install the necessary libraries for the DeepLie model.
+# This code is specific to macOS and may not work on other operating systems.
+# Ensure that the environment is macOS before executing this code.
+# ===================================================================================================
+
+# Real-esrgan model
+git+https://github.com/sberbank-ai/Real-ESRGAN.git
+huggingface_hub==0.14.1
+
+# Face detect, align, cropping
+mediapipe
