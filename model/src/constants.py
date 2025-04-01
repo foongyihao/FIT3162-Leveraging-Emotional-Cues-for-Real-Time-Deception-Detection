@@ -1,0 +1,3 @@
+MODEL_ROOT_PATH = "../"
+NOTEBOOKS_PATH = MODEL_ROOT_PATH + "notebooks/"
+DATA_PATH = MODEL_ROOT_PATH + "data/"

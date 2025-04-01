@@ -12,23 +12,22 @@ Deception detection is crucial in various contexts including legal proceedings, 
 
 ```
 FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
-├── web/                    # NextJS web application
-│   ├── app/                # Next.js app directory
-│   │   ├── about/          # About page
-│   │   ├── model/          # Model interface page
-│   │   └── page.tsx        # Home page
-│   ├── components/         # Reusable UI components
-│   ├── public/             # Static assets
-│   └── package.json        # Web dependencies
-│
-├── model/                  # Model files and notebooks
-│   ├── notebooks/          # Jupyter notebooks for model development
-│   ├── data/               # Training and testing datasets
-│   ├── src/                # Source code for model
-│   └── requirements.txt    # Python dependencies
-│
-├── README.md               # This file
-└── LICENSE                 # Project license
+├── web/                           # NextJS web application
+│   ├── app/                       # Next.js app directory
+│   │   ├── about/                 # About page
+│   │   ├── model/                 # Model interface page
+│   │   └── page.tsx               # Home page
+│   ├── components/                # Reusable UI components
+│   ├── public/                    # Static assets
+│   └── package.json               # Web dependencies
+├── model/                         # Model files and notebooks
+│   ├── notebooks/                 # Jupyter notebooks for model development
+│   ├── data/                      # Training and testing datasets
+│   ├── src/                       # Source code for model
+│   │   └── constants.py           # Contains constant variables and common path declarations
+│   └── [name]-requirements.txt    # Python dependencies file; ensure the file name ends with "-requirements.txt"
+├── README.md                      # Project documentation and setup instructions
+└── LICENSE                        # Project license
 ```
 
 ## Setup Instructions
@@ -36,48 +35,49 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
 ### Prerequisites
 
 - **Software Requirements**
+
   - Node.js (v16 or higher)
   - Python 3.8+ (Python 3.10 recommended)
   - npm (v7 or higher)
   - pip (Python package manager)
   - Git
-
 - **Hardware Requirements**
 
-  | Component | Minimum Requirement | Recommended Requirement |
-  |-----------|---------------------|-------------------------|
-  | Processor (CPU) | Quad-core processor, 2.5 GHz | 6-core processor, 3.0 GHz or higher |
-  | Memory (RAM) | 8 GB | 16 GB or higher |
-  | Storage | 256 GB SSD | 512 GB SSD or higher |
-  | Graphics (GPU) | Integrated graphics | Dedicated GPU with 4 GB VRAM |
-  | Camera | 720p webcam | 1080p webcam, 10 Mbps upload |
-  | Internet Connection | 10 Mbps download, 5 Mbps upload | 25 Mbps download, 10 Mbps upload |
-  | Operating System | Windows 10, macOS 10.15, or Linux (Ubuntu 20.04) | Latest version of Windows, macOS or Linux |
-
+  | Component           | Minimum Requirement                              | Recommended Requirement                   |
+  | ------------------- | ------------------------------------------------ | ----------------------------------------- |
+  | Processor (CPU)     | Quad-core processor, 2.5 GHz                     | 6-core processor, 3.0 GHz or higher       |
+  | Memory (RAM)        | 8 GB                                             | 16 GB or higher                           |
+  | Storage             | 256 GB SSD                                       | 512 GB SSD or higher                      |
+  | Graphics (GPU)      | Integrated graphics                              | Dedicated GPU with 4 GB VRAM              |
+  | Camera              | 720p webcam                                      | 1080p webcam, 10 Mbps upload              |
+  | Internet Connection | 10 Mbps download, 5 Mbps upload                  | 25 Mbps download, 10 Mbps upload          |
+  | Operating System    | Windows 10, macOS 10.15, or Linux (Ubuntu 20.04) | Latest version of Windows, macOS or Linux |
 - **Web Browser**
+
   - Chrome (latest)
   - Firefox (latest)
   - Safari (latest)
   - Edge (latest)
-
 - **Additional Dependencies**
+
   - CUDA and cuDNN (for GPU acceleration with NVIDIA GPUs)
 
 ### Web Application Setup
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/yourusername/FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection.git
    cd FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection
    ```
-
 2. Install web dependencies:
+
    ```bash
    cd web
    npm install
    ```
+3. Create a `.env` file in the `web` directory with necessary environment variables:
 
-3. Create a `.env.local` file in the `web` directory with necessary environment variables:
    ```
    NEXT_PUBLIC_API_URL=http://localhost:5000
    ```
@@ -85,24 +85,25 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
 ### Model Setup
 
 1. Set up a Python virtual environment:
+
    ```bash
    cd model
    python -m venv my_project_env
-   
+
    # Activate on Windows
    venv\Scripts\activate
-   
+
    # Activate on macOS/Linux
    source venv/bin/activate
    ```
-
 2. Install the required Python packages:
+
    ```bash
    cd model
-   pip install -r requirements.txt
+   pip install -r [name]-requirements.txt # Depending on the model you are using, replace [name] with the model name
    ```
-
 3. Download the pre-trained model (if available):
+
    ```bash
    cd model
    python src/download_model.py
@@ -113,16 +114,17 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
 ### Web Application
 
 1. Start the development server:
+
    ```bash
    cd web
    npm run dev
    ```
-   
 2. Open your browser and navigate to `http://localhost:3000`
 
 ## Technologies Used
 
 ### Web Application
+
 - Next.js
 - React
 - TypeScript
@@ -130,6 +132,7 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
 - Shadcn UI Components
 
 ### Model
+
 - Python
 - TensorFlow/PyTorch
 - OpenCV
@@ -137,6 +140,7 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
 - Scikit-learn
 
 ## Preprocessed Datasets
+
 The preprocessed datasets used for training and testing the model can be found in the following Google Drive folder:
 https://drive.google.com/drive/u/1/folders/1oOCvq37bn4Dg8MdXT3XoRhu-ClcbCMIG
 
