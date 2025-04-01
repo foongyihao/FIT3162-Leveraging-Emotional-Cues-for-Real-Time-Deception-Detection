@@ -16,7 +16,6 @@ openpyxl==3.1.2  # Added for reading Excel files
 tensorflow-macos==2.16.2
 tensorflow-metal==1.2.0
 tensorflow-estimator==2.15.0
-# Removed keras==3.0.0 to avoid conflicts with tf.keras
 
 # Utility Libraries
 matplotlib>=3.8.0
