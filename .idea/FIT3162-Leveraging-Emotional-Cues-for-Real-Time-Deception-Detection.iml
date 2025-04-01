@@ -2,7 +2,7 @@
 <module type="WEB_MODULE" version="4">
   <component name="FacetManager">
     <facet type="Python" name="Python facet">
-      <configuration sdkName="Python 3.11 (FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection)" />
+      <configuration sdkName="FIT3162-DeepLie" />
     </facet>
   </component>
   <component name="NewModuleRootManager">
@@ -11,9 +11,10 @@
       <excludeFolder url="file://$MODULE_DIR$/temp" />
       <excludeFolder url="file://$MODULE_DIR$/tmp" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/model/data/MU3D/dataset_300_3_points" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.11" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="library" name="Python 3.11 (FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection) interpreter library" level="application" />
+    <orderEntry type="library" name="FIT3162-DeepLie interpreter library" level="application" />
   </component>
 </module>
