@@ -1,3 +1,7 @@
 /model/data/MU3D/dataset_300_3_points/
 /model/data/MU3D/Videos/
 /model/data/precomputed_hof_augmented_100/
+fdataX.npy
+flabels.npy
+modXtest.npy
+modytest.npy

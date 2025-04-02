@@ -65,7 +65,7 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
 
 ### Installing Git LFS
 
-Git LFS is used to efficiently handle large files such as videos, datasets, and model weights. This project tracks the following file types using Git LFS: `mp4`, `zip`, `csv`, `wmv`, `keras` and `npy`.
+```bash
 
 1. Install Git LFS:
 
@@ -95,10 +95,28 @@ Git LFS is used to efficiently handle large files such as videos, datasets, and 
    git lfs pull
    ```
 
-4. Tracking additional large files
-    ```bash
-       git lfs track ".[your large file extension]"
-    ```
+#### Tracking Large Files with Git LFS
+Git LFS is used to efficiently handle large files such as videos, datasets, and model weights. This project tracks the following file types using Git LFS: `mp4`, `zip`, `csv`, `wmv`, `keras`, and `npy`.
+
+However, due to the limited storage quota, "npy" is not tracked by Git LFS and is ignored by git in the gitignore. To include a particular `.npy` file in your project, you need to track it using Git LFS. Here are the steps to do so:
+
+1. Track the `.npy` file extension using Git LFS:
+   ```bash
+   git lfs track "*.npy"
+   ```
+
+2. Add the `.npy` file to your repository:
+   ```bash
+   git add path/to/your/file.npy
+   ```
+
+Make sure to replace `path/to/your/file.npy` with the actual path to your `.npy` file and `your-branch-name` with the name of your branch.
+
+#### Managing Git LFS
+1. In case the repository hit the storage quota, you can manage the files tracked by Git LFS by removing unnecessary files or migrating them to a different storage location. Here are some useful commands to manage Git LFS:
+   ```bash
+   git lfs ls-files -l | awk '{print $3}' | xargs du -k | awk '{printf "%s %.6f GB\n", $2, $1 / (1024 * 1024)}'
+   ```
 
 ### Web Application Setup
 
