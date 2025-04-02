@@ -1,7 +1,5 @@
 # ===================================================================================================
-# This requirements file is used to install the necessary libraries for the DeepLie model.
-# This code is specific to macOS and may not work on other operating systems.
-# Ensure that the environment is macOS before executing this code.
+# This requirements file is used to install the necessary libraries for the preprocessing.
 # ===================================================================================================
 
 # Real-esrgan model
