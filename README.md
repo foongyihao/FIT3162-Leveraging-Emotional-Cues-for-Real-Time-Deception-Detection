@@ -96,7 +96,7 @@ FIT3162-Leveraging-Emotional-Cues-for-Real-Time-Deception-Detection/
    ```
 
 #### Tracking Large Files with Git LFS
-Git LFS is used to efficiently handle large files such as videos, datasets, and model weights. This project tracks the following file types using Git LFS: `mp4`, `zip`, `csv`, `wmv`, `keras`, and `npy`.
+Git LFS is used to efficiently handle large files such as videos, datasets, and model weights. This project tracks the following file types using Git LFS:  `keras`.
 
 However, due to the limited storage quota, "npy" is not tracked by Git LFS and is ignored by git in the gitignore. To include a particular `.npy` file in your project, you need to track it using Git LFS. Here are the steps to do so:
 
