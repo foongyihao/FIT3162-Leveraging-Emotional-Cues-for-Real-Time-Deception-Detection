@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Upload } from "lucide-react"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
+import Image from "next/image"
 
 export default function ModelPage() {
   const [showError, setShowError] = useState(false)
@@ -54,6 +55,7 @@ export default function ModelPage() {
     }>
   >([])
   const [emotionData, setEmotionData] = useState<Array<{ name: string; value: number }>>([])
+  const [visualizationImg, setVisualizationImg] = useState<string>("")
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -136,6 +138,10 @@ export default function ModelPage() {
         if (data.emotions) {
           setEmotionData(data.emotions)
         }
+        
+        if (data.visualization) {
+          setVisualizationImg(`data:image/png;base64,${data.visualization}`)
+        }
       }
     } catch (err) {
       console.error("Prediction failed:", err)
@@ -166,7 +172,6 @@ export default function ModelPage() {
     sendVideoForPrediction(file)
   }
 
-  // Check and choose supported MIME type
   function getSupportedMimeType() {
     const types = [
       'video/webm;codecs=vp9,opus',
@@ -183,10 +188,9 @@ export default function ModelPage() {
     }
     
     console.warn("None of the preferred MIME types are supported, using default");
-    return '';  // Let browser use default
+    return '';  
   }
 
-  // Start continuous recording
   function startContinuousRecording() {
     if (!stream) {
       console.error("No stream available");
@@ -194,21 +198,17 @@ export default function ModelPage() {
     }
     
     try {
-      // First verify MediaRecorder is available
       if (typeof MediaRecorder === 'undefined') {
         throw new Error("MediaRecorder not supported in this browser");
       }
       
-      // Choose supported mime type
       const mimeType = getSupportedMimeType();
       
-      // Create options object only if we have a supported type
       const options = mimeType ? { mimeType } : undefined;
       console.log(`Creating MediaRecorder with options:`, options);
       
       const mediaRecorder = new MediaRecorder(stream, options);
       
-      // Add event listeners with more detailed logging
       mediaRecorder.onstart = () => {
         console.log("MediaRecorder started");
       };
@@ -221,12 +221,10 @@ export default function ModelPage() {
         console.log("MediaRecorder stopped");
       };
       
-      // Store timestamp with each chunk to track timing
       mediaRecorder.ondataavailable = (event) => {
         console.log(`Data available event fired, data size: ${event.data?.size || 0} bytes`);
         
         if (event.data && event.data.size > 0) {
-          // Use callback form of setState to ensure we're working with latest state
           setRecordedChunks(prev => {
             const newChunks = [...prev, event.data];
             console.log(`Added chunk. Total chunks now: ${newChunks.length}`);
@@ -242,7 +240,6 @@ export default function ModelPage() {
         }
       };
       
-      // Request chunks every 1 second - use shorter interval for testing
       console.log("Starting MediaRecorder with 1000ms timeslice");
       mediaRecorder.start();
       setRecorder(mediaRecorder);
@@ -261,28 +258,23 @@ export default function ModelPage() {
     }
   }
 
-  // Process video chunks with more robust handling
   function processLast30SecondsOfVideo() {
     console.log(`Processing - chunks available: ${recordedChunks.length}, timestamps: ${chunkTimestamps.length}`);
     
-    // Only process if we have chunks
     if (recordedChunks.length === 0) {
       console.log("No video chunks available yet");
       return;
     }
     
     const now = Date.now();
-    const thirtySecondsAgo = now - 30000; // 30 seconds in ms
+    const thirtySecondsAgo = now - 30000; 
     
     console.log(`Looking for chunks between ${new Date(thirtySecondsAgo).toISOString()} and ${new Date(now).toISOString()}`);
     
-    // Find chunks from the last 30 seconds
     const recentChunks: Blob[] = [];
     
-    // Loop through timestamps and collect corresponding chunks
     chunkTimestamps.forEach((timestamp, index) => {
       if (timestamp >= thirtySecondsAgo) {
-        // Make sure recordedChunks has a corresponding entry
         if (index < recordedChunks.length) {
           recentChunks.push(recordedChunks[index]);
         }
@@ -296,20 +288,16 @@ export default function ModelPage() {
       return;
     }
     
-    // Create a blob from the recent chunks
     const blob = new Blob(recentChunks, { type: "video/webm" });
     console.log(`Created blob of size: ${blob.size} bytes`);
     
-    // Only proceed if we have a valid blob with data
     if (blob.size > 0) {
-      // Send for prediction
       sendVideoForPrediction(blob);
     } else {
       console.error("Created empty blob from chunks");
     }
   }
 
-  // Timer to trigger predictions every 30 seconds
   function startPredictionTimer() {
     if (predictionTimer) {
       clearInterval(predictionTimer);
@@ -320,12 +308,10 @@ export default function ModelPage() {
       setCameraTime(prev => {
         const newTime = prev + 1;
         
-        // Process every 30 seconds
         if (newTime % 30 === 0) {
           console.log(`30-second mark reached (${newTime}s), processing recent video...`);
           processLast30SecondsOfVideo();
           
-          // Optional: clean up old chunks to avoid excessive memory use
           if (chunkTimestamps.length > 60) {
             const sixtySecondsAgo = Date.now() - 60000;
             const keepIndex = chunkTimestamps.findIndex(ts => ts >= sixtySecondsAgo);
@@ -344,10 +330,8 @@ export default function ModelPage() {
     console.log("Prediction timer started");
   }
 
-  // Start camera with additional checks
   async function startCamera() {
     try {
-      // Check if browser supports required APIs
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("Your browser doesn't support camera access");
       }
@@ -355,12 +339,11 @@ export default function ModelPage() {
       console.log("Requesting camera and microphone access...");
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: true,
-        audio: false, // Audio often requires additional permissions, simplify for now
+        audio: false, 
       });
 
       console.log("Access granted to camera");
 
-      // Check if mediaStream is valid
       if (!mediaStream) {
         throw new Error("Media stream is null or undefined");
       }
@@ -369,21 +352,18 @@ export default function ModelPage() {
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        videoRef.current.style.transform = "none"; // Remove mirroring
+        videoRef.current.style.transform = "none"; 
         videoRef.current.onloadedmetadata = () => {
           console.log("Video element loaded metadata, starting to play");
           videoRef.current?.play().catch((e) => console.error("Error playing video:", e));
         };
       }
 
-      // Reset chunks before starting new recording
       setRecordedChunks([]);
       setChunkTimestamps([]);
 
-      // First start continuous recording
       startContinuousRecording();
 
-      // Then start the timer for predictions
       startPredictionTimer();
     } catch (err) {
       console.error("Error accessing camera:", err);
@@ -467,7 +447,7 @@ export default function ModelPage() {
                 muted
                 playsInline
                 className="absolute inset-0 w-full h-full object-cover"
-                style={{ transform: "none" }} // Remove mirroring
+                style={{ transform: "none" }} 
               />
             )}
           </div>
@@ -535,32 +515,52 @@ export default function ModelPage() {
         </Card>
 
         <Card className="p-6 space-y-6 md:col-span-3">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Time</TableHead>
-                <TableHead>Result</TableHead>
-                <TableHead>Confidence</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {predictionResults.length > 0
-                ? predictionResults.map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell>{row.time}</TableCell>
-                      <TableCell>{row.result}</TableCell>
-                      <TableCell>{row.confidence}</TableCell>
-                    </TableRow>
-                  ))
-                : mockData.map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell>{row.time}</TableCell>
-                      <TableCell>{row.result}</TableCell>
-                      <TableCell>{row.confidence}</TableCell>
-                    </TableRow>
-                  ))}
-            </TableBody>
-          </Table>
+          <div className="flex flex-col h-[600px]">
+            {/* History Table Container */}
+            <div className="flex-1 overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Result</TableHead>
+                    <TableHead>Confidence</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {predictionResults.length > 0
+                    ? predictionResults.map((row, i) => (
+                        <TableRow key={i}>
+                          <TableCell>{row.time}</TableCell>
+                          <TableCell>{row.result}</TableCell>
+                          <TableCell>{row.confidence}</TableCell>
+                        </TableRow>
+                      ))
+                    : mockData.map((row, i) => (
+                        <TableRow key={i}>
+                          <TableCell>{row.time}</TableCell>
+                          <TableCell>{row.result}</TableCell>
+                          <TableCell>{row.confidence}</TableCell>
+                        </TableRow>
+                      ))}
+                </TableBody>
+              </Table>
+            </div>
+            {/* Visualization Container */}
+            {visualizationImg && (
+              <div className="flex-1 mt-6 overflow-hidden">
+                  <h3 className="text-lg font-semibold mt-2">Visualization</h3>
+                <Image
+                    src={visualizationImg}
+                    alt="Video frames with emotion predictions"
+                    className="w-full h-full object-contain"
+                    layout="responsive"
+                    width={800}
+                    height={600}
+                    priority
+                />
+              </div>
+            )}
+          </div>
         </Card>
       </div>
 

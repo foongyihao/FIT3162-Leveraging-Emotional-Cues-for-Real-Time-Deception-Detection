@@ -8,6 +8,12 @@ from flask_cors import CORS
 from constants import NOTEBOOKS_PATH
 import tempfile
 from MediaPipeCropping import process_video, initialize_face_mesh
+import matplotlib
+# Force matplotlib to use non-interactive backend to avoid GUI thread issues
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import base64
+from io import BytesIO
 
 app = Flask(__name__)
 CORS(app)
@@ -96,6 +102,107 @@ def process_emotions(emotion_preds):
     
     return emotion_data
 
+def create_frames_visualization(frames, emotion_preds, num_frames=8, encodings=None):
+    """
+    Creates a visualization of frames with emotion predictions and encoding heatmaps
+    Returns the image as a base64-encoded string
+    """
+    try:
+        # Select evenly spaced frames
+        if len(frames) < num_frames:
+            num_frames = len(frames)
+        
+        indices = np.linspace(0, len(frames) - 1, num_frames, dtype=int)
+        
+        # Create figure with two rows
+        fig, axs = plt.subplots(2, num_frames, figsize=(num_frames*2, 5))
+        plt.ioff()  # Turn off interactive mode
+        
+        for j, idx in enumerate(indices):
+            try:
+                # Top row: Original frame
+                frame = frames[idx].copy()  # Make a copy to avoid modifying original
+                
+                # Handle different frame formats safely
+                if len(frame.shape) == 3 and frame.shape[2] == 1:
+                    frame = frame.reshape(frame.shape[0], frame.shape[1])
+                elif len(frame.shape) == 3 and frame.shape[2] > 1:
+                    # If RGB, convert to grayscale for display consistency
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.shape[2] == 3 else frame[:,:,0]
+                
+                # Ensure frame data is valid for plotting
+                if np.isnan(frame).any() or np.isinf(frame).any():
+                    frame = np.nan_to_num(frame, nan=0.0, posinf=1.0, neginf=0.0)
+                
+                axs[0, j].imshow(frame, cmap='gray')
+                axs[0, j].axis('off')
+                
+                # Get emotion prediction for the frame
+                if idx < len(emotion_preds):
+                    emotion_idx = np.argmax(emotion_preds[idx])
+                    emotion_label = EMOTION_LABELS[emotion_idx]
+                    confidence = emotion_preds[idx][emotion_idx] * 100
+                    axs[0, j].set_title(f"{emotion_label}")
+                else:
+                    axs[0, j].set_title(f"Frame {idx}")
+                
+                # Bottom row: Encoding heatmap
+                if encodings is not None and idx < len(encodings):
+                    # Reshape encoding to a square-ish shape for visualization
+                    # Default reshape to approximately square dimensions
+                    encoding = encodings[idx]
+                    encoding_dim = int(np.sqrt(encoding.shape[0]))
+                    
+                    # Reshape to square-ish dimensions - find best fit
+                    if encoding.shape[0] == 4608:  # Common size in these models
+                        encoding_reshaped = encoding.reshape(64, 72)  # 64×72=4608
+                    else:
+                        # Try to make it as square as possible
+                        encoding_reshaped = encoding.reshape(encoding_dim, -1)
+                    
+                    # Display as heatmap
+                    im = axs[1, j].imshow(encoding_reshaped, cmap='viridis')
+                    axs[1, j].axis('off')
+                    axs[1, j].set_title(f"Encoding")
+                else:
+                    axs[1, j].axis('off')
+                    axs[1, j].text(0.5, 0.5, "No encoding available", 
+                                 horizontalalignment='center', verticalalignment='center')
+            except Exception as e:
+                print(f"Error processing frame {idx}: {e}")
+                # Draw placeholder for error frames
+                axs[0, j].text(0.5, 0.5, f"Error: {str(e)[:20]}...", 
+                              horizontalalignment='center', verticalalignment='center')
+                axs[0, j].axis('off')
+                axs[1, j].axis('off')
+        
+        plt.tight_layout()
+        
+        # Save to memory buffer
+        buf = BytesIO()
+        plt.savefig(buf, format='png', dpi=100)
+        plt.close(fig)
+        buf.seek(0)
+        
+        # Convert to base64 for embedding in response
+        img_str = base64.b64encode(buf.getvalue()).decode('utf-8')
+        
+        return img_str
+    except Exception as e:
+        print(f"Visualization generation failed: {e}")
+        # Return a simple error image
+        fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+        ax.text(0.5, 0.5, f"Visualization Error: {str(e)}", 
+               horizontalalignment='center', verticalalignment='center')
+        ax.axis('off')
+        
+        buf = BytesIO()
+        plt.savefig(buf, format='png', dpi=100)
+        plt.close(fig)
+        buf.seek(0)
+        
+        return base64.b64encode(buf.getvalue()).decode('utf-8')
+
 def predict(video_path, fer_model, main_model, mean_X, std_X, num_frames=300):
     global progress_value
     progress_value = 0
@@ -105,15 +212,15 @@ def predict(video_path, fer_model, main_model, mean_X, std_X, num_frames=300):
         frames = extract_frames_mediapipe(video_path, num_frames)
         
         # Convert and preprocess frames
-        frames = [cv2.cvtColor(cv2.resize(f, (48, 48)), cv2.COLOR_BGR2GRAY) for f in frames]
-        frames = np.array(frames).astype('float32')
-        frames = np.expand_dims(frames, axis=-1)
-        frames = (frames - mean_X) / (std_X + 1e-8)
+        frames_processed = [cv2.cvtColor(cv2.resize(f, (48, 48)), cv2.COLOR_BGR2GRAY) for f in frames]
+        frames_processed = np.array(frames_processed).astype('float32')
+        frames_processed = np.expand_dims(frames_processed, axis=-1)
+        frames_processed = (frames_processed - mean_X) / (std_X + 1e-8)
         progress_value = 30
         
         # Get emotion predictions
-        emotion_preds = fer_model.predict(frames)
-        emotion_data = process_emotions(emotion_preds)  # Simplified call
+        emotion_preds = fer_model.predict(frames_processed)
+        emotion_data = process_emotions(emotion_preds)
         progress_value = 50
         
         # Extract features using encoding model
@@ -125,10 +232,10 @@ def predict(video_path, fer_model, main_model, mean_X, std_X, num_frames=300):
         # Process in chunks to avoid memory issues
         chunk_size = 30
         all_features = []
-        total_chunks = len(frames) // chunk_size
+        total_chunks = len(frames_processed) // chunk_size
         
-        for i in range(0, len(frames), chunk_size):
-            chunk = frames[i : i + chunk_size]
+        for i in range(0, len(frames_processed), chunk_size):
+            chunk = frames_processed[i : i + chunk_size]
             features_chunk = encoding_model.predict(chunk)
             all_features.append(features_chunk)
             
@@ -140,12 +247,15 @@ def predict(video_path, fer_model, main_model, mean_X, std_X, num_frames=300):
         all_features = np.concatenate(all_features, axis=0)
         all_features = np.expand_dims(all_features, axis=0)  # Add batch dimension
         
+        # Create visualization of frames with emotions and encodings
+        visualization_img = create_frames_visualization(frames_processed, emotion_preds, encodings=all_features[0])
+        
         # Get deception prediction
         prediction = main_model.predict(all_features)
         progress_value = 100
         
-        # Return an empty
-        return prediction, emotion_data
+        # Return prediction, emotions, and visualization
+        return prediction, emotion_data, visualization_img
         
     except Exception as e:
         progress_value = 100  # Reset progress
@@ -163,21 +273,22 @@ def predict_route():
     uploaded_file.save(temp_path)
 
     try:
-        # Run prediction
-        preds, emotion_data = predict(temp_path, fer_model, main_model, mean_X, std_X)
+        # Run prediction with visualization
+        preds, emotion_data, visualization_img = predict(temp_path, fer_model, main_model, mean_X, std_X)
         
         # Format the prediction results
         prediction_value = float(preds[0][0])
         is_deceptive = prediction_value > 0.5
         confidence = abs(prediction_value - 0.5) * 2 * 100  # Convert to percentage and scale
         
-        # Prepare the response
+        # Prepare the response with visualization
         result = {
             "prediction": preds.tolist(),
             "result": "Deceptive" if is_deceptive else "Truthful",
             "confidence": f"{confidence:.1f}%",
             "emotions": emotion_data,
-            "time": "Analysis Complete"
+            "time": "Analysis Complete",
+            "visualization": visualization_img
         }
         
         return jsonify(result)
