@@ -6,10 +6,17 @@ import mediapipe as mp
 from PIL import Image
 import torch
 from RealESRGAN import RealESRGAN
+from constants import DATA_PATH
 
 # Initialize Real-ESRGAN
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# Check if MPS is available and set the device
+if torch.backends.mps.is_available():
+    device = torch.device('mps')
+else:
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 print('device:', device)
+
 model_scale = 2
 model = RealESRGAN(device, scale=model_scale)
 model.load_weights(f'weights/RealESRGAN_x{model_scale}.pth')
@@ -153,34 +160,39 @@ def process_video(video_path, output_folder, target_frames=300, ssim_threshold=0
         indices = np.linspace(0, total_frames - 1, target_frames, dtype=int)
         saved_frames = [saved_frames[i] for i in indices]
 
-    # Enhance image quality using Real-ESRGAN before saving
-    enhanced_frames = []
+    # Save enhanced images (this must be removed if you are enhancing image)
     for idx, frame in enumerate(saved_frames):
-        try:
-            # Convert BGR (OpenCV) to RGB (PIL)
-            pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            original_size = pil_image.size
-            sr_image = model.predict(np.array(pil_image))
-            sr_image = sr_image.resize(original_size, Image.LANCZOS)
-            sr_frame = cv2.cvtColor(np.array(sr_image), cv2.COLOR_RGB2BGR)
-            enhanced_frames.append(sr_frame)
-        except Exception as e:
-            print(f"Error enhancing frame {idx}: {e}")
-
-    # Save enhanced images
-    for idx, frame in enumerate(enhanced_frames):
         output_path = os.path.join(output_folder, f'frame_{idx:04d}.png')
         cv2.imwrite(output_path, frame)
 
-    return frame_count, len(enhanced_frames)
+    # # Enhance image quality using Real-ESRGAN before saving
+    # enhanced_frames = []
+    # for idx, frame in enumerate(saved_frames):
+    #     try:
+    #         # Convert BGR (OpenCV) to RGB (PIL)
+    #         pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    #         original_size = pil_image.size
+    #         sr_image = model.predict(np.array(pil_image))
+    #         sr_image = sr_image.resize(original_size, Image.LANCZOS)
+    #         sr_frame = cv2.cvtColor(np.array(sr_image), cv2.COLOR_RGB2BGR)
+    #         enhanced_frames.append(sr_frame)
+    #     except Exception as e:
+    #         print(f"Error enhancing frame {idx}: {e}")
+    #
+    # # Save enhanced images
+    # for idx, frame in enumerate(enhanced_frames):
+    #     output_path = os.path.join(output_folder, f'frame_{idx:04d}.png')
+    #     cv2.imwrite(output_path, frame)
 
-"""Main function to orchestrate the face alignment process."""
-video_filename = "BF001_3NT.wmv"  # Change this to your video
-output_folder = create_output_directory(video_filename)
-target_frames = 300  # Desired number of frames
-ssim_threshold = 0.9  # Adjust sensitivity if needed
-frame_count, saved_frame_count = process_video(video_filename, output_folder, target_frames, ssim_threshold)
+    return frame_count, len(saved_frames)
 
-print(f"Video filename: {video_filename}")
-print(f"Total frames processed: {frame_count}")
-print(f"Total frames saved: {saved_frame_count}")
+if __name__ == "__main__":
+    video_filename = "BF001_3NT.wmv"  # Change this to your video
+    output_folder = create_output_directory(video_filename)
+    target_frames = 300   # Desired number of frames
+    ssim_threshold = 0.9  # Adjust sensitivity if needed
+    frame_count, saved_frame_count = process_video(DATA_PATH + "MU3D/Videos/" + video_filename, output_folder, target_frames, ssim_threshold)
+
+    print(f"Video filename: {video_filename}")
+    print(f"Total frames processed: {frame_count}")
+    print(f"Total frames saved: {saved_frame_count}")

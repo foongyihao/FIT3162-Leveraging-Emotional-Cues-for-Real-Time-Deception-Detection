@@ -1,10 +1,13 @@
 import tensorflow as tf
+import tensorflow.keras.backend as K
 import cv2
 import numpy as np
 import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from constants import NOTEBOOKS_PATH
+import tempfile
+from MediaPipeCropping import process_video, initialize_face_mesh
 
 app = Flask(__name__)
 CORS(app)
@@ -30,78 +33,76 @@ main_model = tf.keras.models.load_model(main_model_path)
 mean_X = np.load(NOTEBOOKS_PATH + 'deeplie/content/fer2013/mean_X.npy')
 std_X = np.load(NOTEBOOKS_PATH + 'deeplie/content/fer2013/std_X.npy')
 
-def extract_frames(video_path, num_frames=300):
-    cap = cv2.VideoCapture(video_path)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    if total_frames < num_frames:  # Minimal number for a valid video
-        raise ValueError(f"Video has too few frames ({total_frames}). Need at least {num_frames}.")
+def extract_frames_mediapipe(video_path, num_frames=300):
+    """
+    Extract frames using MediaPipeCropping which:
+    1. Detects faces using MediaPipe
+    2. Aligns the faces based on eye positions
+    3. Crops the face region
+    4. Enhances the image quality
+    """
+    global progress_value
+    progress_value = 5
     
-    # Adjust extraction to get proper frames based on video length
-    if total_frames < num_frames:
-        step = 1  # Take every frame
-    else:
-        step = total_frames // num_frames
+    # Create a temporary directory to store processed frames
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Process video using MediaPipeCropping
+        frame_count, saved_frame_count = process_video(
+            video_path, 
+            temp_dir, 
+            target_frames=num_frames, 
+            ssim_threshold=0.9
+        )
+        progress_value = 15
         
-    frames = []
-    for i in range(min(num_frames, total_frames)):
-        frame_pos = min(i * step, total_frames - 1)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_pos)
-        ret, frame = cap.read()
-        if ret:
-            frames.append(frame)
-        else:
-            break
+        if saved_frame_count == 0:
+            raise ValueError("No faces detected in the video.")
+        
+        # Load the processed frames
+        frames = []
+        for i in range(saved_frame_count):
+            frame_path = os.path.join(temp_dir, f'frame_{i:04d}.png')
+            if os.path.exists(frame_path):
+                frame = cv2.imread(frame_path)
+                frames.append(frame)
+        
+        if len(frames) < num_frames:
+            print(f"Warning: Only {len(frames)} frames were extracted (requested {num_frames})")
             
-    cap.release()
-    return frames
+        progress_value = 20
+        return frames
 
-def process_emotions(emotion_preds, frame_count):
-    # Summarize probabilities
-    emotion_counts = np.sum(emotion_preds, axis=0)
-    total_emotions = np.sum(emotion_counts)
-    emotion_percentages = (emotion_counts / (total_emotions + 1e-8)) * 100
-
+def process_emotions(emotion_preds):
+    """
+    Calculate emotion distribution by counting the dominant emotion in each frame
+    """
+    # Get the dominant emotion for each frame
+    dominant_emotions = np.argmax(emotion_preds, axis=1)
+    
+    # Count occurrences of each emotion across frames
+    emotion_counts = np.zeros(len(EMOTION_LABELS))
+    for emotion_idx in dominant_emotions:
+        emotion_counts[emotion_idx] += 1
+    
+    # Calculate percentages
+    total_frames = len(emotion_preds)
+    emotion_percentages = (emotion_counts / total_frames) * 100
+    
+    # Format the results
     emotion_data = []
     for i, label in enumerate(EMOTION_LABELS):
         if emotion_percentages[i] > 0:
             emotion_data.append({"name": label, "value": float(emotion_percentages[i])})
-
-    confidence_timeline = []
-    # Sample points for the timeline
-    sample_points = min(6, frame_count)
-    if sample_points > 1:
-        step = frame_count // sample_points
-        for i in range(0, frame_count, step):
-            if i >= frame_count:
-                break
-            time_point = f"{i//30:d}:{(i%30)*2:02d}"
-            max_emotion_idx = np.argmax(emotion_preds[i])
-            confidence_val = float(emotion_preds[i][max_emotion_idx] * 100)
-            confidence_timeline.append({
-                "time": time_point,
-                "confidence": confidence_val,
-                "emotion": EMOTION_LABELS[max_emotion_idx],
-            })
-    else:
-        time_point = "0:00"
-        max_emotion_idx = np.argmax(emotion_preds[0])
-        confidence_val = float(emotion_preds[0][max_emotion_idx] * 100)
-        confidence_timeline.append({
-            "time": time_point,
-            "confidence": confidence_val,
-            "emotion": EMOTION_LABELS[max_emotion_idx],
-        })
-
-    return emotion_data, confidence_timeline
+    
+    return emotion_data
 
 def predict(video_path, fer_model, main_model, mean_X, std_X, num_frames=300):
     global progress_value
     progress_value = 0
     
     try:
-        # Extract frames from the video
-        frames = extract_frames(video_path, num_frames)
-        progress_value = 10
+        # Extract frames from the video using MediaPipeCropping
+        frames = extract_frames_mediapipe(video_path, num_frames)
         
         # Convert and preprocess frames
         frames = [cv2.cvtColor(cv2.resize(f, (48, 48)), cv2.COLOR_BGR2GRAY) for f in frames]
@@ -112,7 +113,7 @@ def predict(video_path, fer_model, main_model, mean_X, std_X, num_frames=300):
         
         # Get emotion predictions
         emotion_preds = fer_model.predict(frames)
-        emotion_data, confidence_timeline = process_emotions(emotion_preds, len(frames))
+        emotion_data = process_emotions(emotion_preds)  # Simplified call
         progress_value = 50
         
         # Extract features using encoding model
@@ -143,7 +144,8 @@ def predict(video_path, fer_model, main_model, mean_X, std_X, num_frames=300):
         prediction = main_model.predict(all_features)
         progress_value = 100
         
-        return prediction, emotion_data, confidence_timeline
+        # Return an empty
+        return prediction, emotion_data
         
     except Exception as e:
         progress_value = 100  # Reset progress
@@ -162,7 +164,7 @@ def predict_route():
 
     try:
         # Run prediction
-        preds, emotion_data, confidence_timeline = predict(temp_path, fer_model, main_model, mean_X, std_X)
+        preds, emotion_data = predict(temp_path, fer_model, main_model, mean_X, std_X)
         
         # Format the prediction results
         prediction_value = float(preds[0][0])
@@ -175,12 +177,12 @@ def predict_route():
             "result": "Deceptive" if is_deceptive else "Truthful",
             "confidence": f"{confidence:.1f}%",
             "emotions": emotion_data,
-            "confidence_timeline": confidence_timeline,
             "time": "Analysis Complete"
         }
         
         return jsonify(result)
     except Exception as e:
+        print(e)
         return jsonify({"error": str(e)}), 500
     finally:
         if os.path.exists(temp_path):

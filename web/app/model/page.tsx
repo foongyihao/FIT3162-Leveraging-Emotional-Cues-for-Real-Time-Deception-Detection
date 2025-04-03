@@ -29,18 +29,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Upload } from "lucide-react"
-import {
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts"
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 
 export default function ModelPage() {
   const [showError, setShowError] = useState(false)
@@ -65,7 +54,6 @@ export default function ModelPage() {
     }>
   >([])
   const [emotionData, setEmotionData] = useState<Array<{ name: string; value: number }>>([])
-  const [confidenceData, setConfidenceData] = useState<Array<{ time: string; confidence: number }>>([])
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -85,20 +73,12 @@ export default function ModelPage() {
     { name: "Neutral", value: 15 },
   ]
 
-  const histogramData = [
-    { time: "0:00", confidence: 85 },
-    { time: "0:05", confidence: 92 },
-    { time: "0:10", confidence: 78 },
-    { time: "0:15", confidence: 95 },
-    { time: "0:20", confidence: 88 },
-    { time: "0:25", confidence: 90 },
-  ]
-
   const COLORS = [
-    "hsl(var(--chart-1))",
-    "hsl(var(--chart-2))",
-    "hsl(var(--chart-3))",
-    "hsl(var(--chart-4))",
+    "#000000",
+    "#333333",
+    "#666666",
+    "#999999", 
+    "#CCCCCC",  
   ]
 
   async function startPredictProgressCheck() {
@@ -136,11 +116,12 @@ export default function ModelPage() {
         body: formData,
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}: ${response.statusText}`)
+        throw new Error(`Server responded with ${response.status}: ${data.error || response.statusText}`)
       }
 
-      const data = await response.json()
       console.log("Prediction result:", data)
 
       if (data.prediction) {
@@ -155,14 +136,10 @@ export default function ModelPage() {
         if (data.emotions) {
           setEmotionData(data.emotions)
         }
-
-        if (data.confidence_timeline) {
-          setConfidenceData(data.confidence_timeline)
-        }
       }
     } catch (err) {
       console.error("Prediction failed:", err)
-      setErrorMessage("Prediction failed. Please try again.")
+      setErrorMessage("Prediction failed. Please try again.\n" + err)
       setShowError(true)
     }
   }
@@ -467,8 +444,8 @@ export default function ModelPage() {
     <main className="container mx-auto px-4 py-8">
       <canvas ref={canvasRef} style={{ display: "none" }} />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <Card className="p-6 space-y-6 md:col-span-1">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
+        <Card className="p-6 space-y-6 md:col-span-2">
           <div className="relative aspect-video bg-muted rounded-lg overflow-hidden">
             {inputMethod === "upload" ? (
               videoSrc ? (
@@ -526,9 +503,38 @@ export default function ModelPage() {
               <p>Camera streaming in real time; predictions triggered every 30 seconds.</p>
             )}
           </div>
+          <div className="flex flex-col gap-4">
+            <div className="aspect-square bg-card rounded-lg flex items-center justify-center p-4 flex-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={emotionData.length > 0 ? emotionData : pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius="50%"
+                    outerRadius="60%"
+                    fill="#8884d8"
+                    paddingAngle={10}
+                    dataKey="value"
+                    nameKey="name"
+                    label={(entry) => entry.name} 
+                    labelLine={{ strokeWidth: 1, stroke: "gray", strokeOpacity: 0.5 }}
+                  >
+                    {(emotionData.length > 0 ? emotionData : pieData).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value) => `${(value as number).toFixed(0)}%`}
+                    labelFormatter={(name) => `${name}`}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         </Card>
 
-        <Card className="p-6 space-y-6 md:col-span-2">
+        <Card className="p-6 space-y-6 md:col-span-3">
           <Table>
             <TableHeader>
               <TableRow>
@@ -555,42 +561,6 @@ export default function ModelPage() {
                   ))}
             </TableBody>
           </Table>
-
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="aspect-square bg-card rounded-lg flex items-center justify-center p-4 flex-1">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={emotionData.length > 0 ? emotionData : pieData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    outerRadius="80%"
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {(emotionData.length > 0 ? emotionData : pieData).map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div className="aspect-video bg-card rounded-lg flex items-center justify-center p-4 flex-1">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={confidenceData.length > 0 ? confidenceData : histogramData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="time" />
-                  <YAxis domain={[0, 100]} />
-                  <Tooltip />
-                  <Bar dataKey="confidence" fill="hsl(var(--chart-1))" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
         </Card>
       </div>
 

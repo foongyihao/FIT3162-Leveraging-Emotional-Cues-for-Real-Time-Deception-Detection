@@ -8,3 +8,11 @@ huggingface_hub==0.14.1
 
 # Face detect, align, cropping
 mediapipe
+ml-dtypes==0.3.1
+opencv-python
+numpy
+scikit-image
+mediapipe
+Pillow
+torch
+opencv-python
