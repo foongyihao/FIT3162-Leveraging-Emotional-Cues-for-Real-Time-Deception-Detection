@@ -1,0 +1,26 @@
+# ===================================================================================================
+# This requirements file is used to install the necessary libraries for the DeepLie model.
+# This code is specific to Windows with CUDA support and may not work on other operating systems.
+# Ensure that the environment has a compatible NVIDIA GPU with CUDA installed before executing this code.
+# ===================================================================================================
+
+# For integrating the model with the web application
+flask
+flask-cors
+
+# Core Libraries
+numpy==1.26.4
+pandas==1.5.3
+opencv-python==4.7.0.72
+scikit-learn==1.2.2
+pytz==2023.3
+openpyxl==3.1.2  # Added for reading Excel files
+
+# Deep Learning Libraries (CUDA support)
+tensorflow==2.16.2
+tensorflow-gpu==2.16.2  # Enables GPU acceleration with CUDA
+tensorflow-estimator==2.15.0
+
+# Utility Libraries
+matplotlib>=3.8.0
+alive-progress==2.4.1
