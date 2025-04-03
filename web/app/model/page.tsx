@@ -61,6 +61,7 @@ export default function ModelPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const requestDataIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const lastPredictionTimestamp = useRef<number>(Date.now())
 
   const mockData = [
     { time: "0:02", result: "Deceptive", confidence: "95%" },
@@ -260,72 +261,69 @@ export default function ModelPage() {
 
   function processLast30SecondsOfVideo() {
     console.log(`Processing - chunks available: ${recordedChunks.length}, timestamps: ${chunkTimestamps.length}`);
-    
+
     if (recordedChunks.length === 0) {
       console.log("No video chunks available yet");
       return;
     }
-    
+
     const now = Date.now();
-    const thirtySecondsAgo = now - 30000; 
-    
-    console.log(`Looking for chunks between ${new Date(thirtySecondsAgo).toISOString()} and ${new Date(now).toISOString()}`);
-    
+    // Only look at chunks from the last 30 seconds
+    const oldestAllowedTimestamp = now - 30000;
+
+    // Gather the most recent chunks
     const recentChunks: Blob[] = [];
-    
-    chunkTimestamps.forEach((timestamp, index) => {
-      if (timestamp >= thirtySecondsAgo) {
-        if (index < recordedChunks.length) {
-          recentChunks.push(recordedChunks[index]);
-        }
+    for (let i = 0; i < chunkTimestamps.length; i++) {
+      if (chunkTimestamps[i] >= oldestAllowedTimestamp) {
+        recentChunks.push(recordedChunks[i]);
       }
-    });
-    
-    console.log(`Found ${recentChunks.length} chunks from the last 30 seconds`);
-    
+    }
+
     if (recentChunks.length === 0) {
-      console.log("No recent chunks available");
+      console.log("No new chunks available in the last 30 seconds");
       return;
     }
-    
+
+    // Create a Blob for prediction
     const blob = new Blob(recentChunks, { type: "video/webm" });
-    console.log(`Created blob of size: ${blob.size} bytes`);
-    
-    if (blob.size > 0) {
-      sendVideoForPrediction(blob);
-    } else {
-      console.error("Created empty blob from chunks");
+    console.log(`Created blob of size: ${blob.size} bytes for the last 30s`);
+
+    // Start polling & send the video data
+    // (sendVideoForPrediction already calls startPredictProgressCheck, but be sure it is never skipped)
+    sendVideoForPrediction(blob);
+
+    // Remove only chunks older than 30 seconds
+    const newRecordedChunks: Blob[] = [];
+    const newChunkTimestamps: number[] = [];
+    for (let i = 0; i < chunkTimestamps.length; i++) {
+      if (chunkTimestamps[i] >= oldestAllowedTimestamp) {
+        newRecordedChunks.push(recordedChunks[i]);
+        newChunkTimestamps.push(chunkTimestamps[i]);
+      }
     }
+    setRecordedChunks(newRecordedChunks);
+    setChunkTimestamps(newChunkTimestamps);
   }
 
   function startPredictionTimer() {
     if (predictionTimer) {
       clearInterval(predictionTimer);
     }
-    
+
     console.log("Starting prediction timer");
     const timer = setInterval(() => {
-      setCameraTime(prev => {
+      setCameraTime((prev) => {
         const newTime = prev + 1;
-        
+
         if (newTime % 30 === 0) {
           console.log(`30-second mark reached (${newTime}s), processing recent video...`);
           processLast30SecondsOfVideo();
-          
-          if (chunkTimestamps.length > 60) {
-            const sixtySecondsAgo = Date.now() - 60000;
-            const keepIndex = chunkTimestamps.findIndex(ts => ts >= sixtySecondsAgo);
-            if (keepIndex > 0) {
-              setRecordedChunks(prev => prev.slice(keepIndex));
-              setChunkTimestamps(prev => prev.slice(keepIndex));
-            }
-          }
         }
-        
+
         return newTime;
       });
     }, 1000);
-    
+
     setPredictionTimer(timer);
     console.log("Prediction timer started");
   }
@@ -361,8 +359,6 @@ export default function ModelPage() {
 
       setRecordedChunks([]);
       setChunkTimestamps([]);
-
-      startContinuousRecording();
 
       startPredictionTimer();
     } catch (err) {
@@ -419,6 +415,12 @@ export default function ModelPage() {
       }
     }
   }, [videoSrc, inputMethod])
+
+  useEffect(() => {
+    if (stream && inputMethod === "camera") {
+      startContinuousRecording();
+    }
+  }, [stream, inputMethod]);
 
   return (
     <main className="container mx-auto px-4 py-8">
