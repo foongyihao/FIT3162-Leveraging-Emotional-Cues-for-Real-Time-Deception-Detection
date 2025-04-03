@@ -32,6 +32,15 @@ import { Upload } from "lucide-react"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 import Image from "next/image"
 
+interface PredictionResult {
+  time: string
+  result: string
+  confidence: string
+  videoName: string
+  emotions?: Array<{ name: string; value: number }>
+  visualization?: string
+}
+
 export default function ModelPage() {
   const [showError, setShowError] = useState(false)
   const [errorMessage, setErrorMessage] = useState(
@@ -47,13 +56,8 @@ export default function ModelPage() {
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null)
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([])
   const [chunkTimestamps, setChunkTimestamps] = useState<number[]>([])
-  const [predictionResults, setPredictionResults] = useState<
-    Array<{
-      time: string
-      result: string
-      confidence: string
-    }>
-  >([])
+  const [predictionResults, setPredictionResults] = useState<PredictionResult[]>([])
+  const [selectedPrediction, setSelectedPrediction] = useState<PredictionResult | null>(null)
   const [emotionData, setEmotionData] = useState<Array<{ name: string; value: number }>>([])
   const [visualizationImg, setVisualizationImg] = useState<string>("")
 
@@ -63,10 +67,10 @@ export default function ModelPage() {
   const requestDataIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const lastPredictionTimestamp = useRef<number>(Date.now())
 
-  const mockData = [
-    { time: "0:02", result: "Deceptive", confidence: "95%" },
-    { time: "0:05", result: "Truth", confidence: "87%" },
-    { time: "0:08", result: "Truth", confidence: "92%" },
+  const mockData: PredictionResult[] = [
+    { time: "0:02", result: "Deceptive", confidence: "95%", videoName: "-" },
+    { time: "0:05", result: "Truth", confidence: "87%", videoName: "-" },
+    { time: "0:08", result: "Truth", confidence: "92%", videoName: "-" },
   ]
 
   const pieData = [
@@ -128,14 +132,20 @@ export default function ModelPage() {
       console.log("Prediction result:", data)
 
       if (data.prediction) {
-        const predictionResult = {
+        const predictionResult: PredictionResult = {
           time: new Date().toLocaleTimeString(),
           result: data.result || (data.prediction[0] > 0.5 ? "Deceptive" : "Truthful"),
           confidence: data.confidence || `${Math.round(Math.abs(data.prediction[0] - 0.5) * 200)}%`,
+          videoName: videoData instanceof File && videoData.name ? videoData.name : "-",
+          emotions: data.emotions, // expects an array of {name, value}
+          visualization: data.visualization ? `data:image/png;base64,${data.visualization}` : undefined,
         }
 
         setPredictionResults((prev) => [...prev, predictionResult])
+        // Automatically select the prediction if none is selected.
+        if (!selectedPrediction) setSelectedPrediction(predictionResult)
 
+        // Optionally update global states (if needed elsewhere)
         if (data.emotions) {
           setEmotionData(data.emotions)
         }
@@ -272,7 +282,7 @@ export default function ModelPage() {
     const oldestAllowedTimestamp = now - 30000;
 
     // Gather the most recent chunks
-    const recentChunks: Blob[] = [];
+    const recentChunks: Blob[] = []
     for (let i = 0; i < chunkTimestamps.length; i++) {
       if (chunkTimestamps[i] >= oldestAllowedTimestamp) {
         recentChunks.push(recordedChunks[i]);
@@ -289,12 +299,11 @@ export default function ModelPage() {
     console.log(`Created blob of size: ${blob.size} bytes for the last 30s`);
 
     // Start polling & send the video data
-    // (sendVideoForPrediction already calls startPredictProgressCheck, but be sure it is never skipped)
     sendVideoForPrediction(blob);
 
     // Remove only chunks older than 30 seconds
-    const newRecordedChunks: Blob[] = [];
-    const newChunkTimestamps: number[] = [];
+    const newRecordedChunks: Blob[] = []
+    const newChunkTimestamps: number[] = []
     for (let i = 0; i < chunkTimestamps.length; i++) {
       if (chunkTimestamps[i] >= oldestAllowedTimestamp) {
         newRecordedChunks.push(recordedChunks[i]);
@@ -427,6 +436,7 @@ export default function ModelPage() {
       <canvas ref={canvasRef} style={{ display: "none" }} />
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
+        {/* Left Card: Video Preview and Emotion Distribution */}
         <Card className="p-6 space-y-6 md:col-span-2">
           <div className="relative aspect-video bg-muted rounded-lg overflow-hidden">
             {inputMethod === "upload" ? (
@@ -485,12 +495,13 @@ export default function ModelPage() {
               <p>Camera streaming in real time; predictions triggered every 30 seconds.</p>
             )}
           </div>
+          {/* Emotion Distribution: Use selected prediction if available */}
           <div className="flex flex-col gap-4">
             <div className="aspect-square bg-card rounded-lg flex items-center justify-center p-4 flex-1">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={emotionData.length > 0 ? emotionData : pieData}
+                    data={selectedPrediction && selectedPrediction.emotions ? selectedPrediction.emotions : pieData}
                     cx="50%"
                     cy="50%"
                     innerRadius="50%"
@@ -502,9 +513,11 @@ export default function ModelPage() {
                     label={(entry) => entry.name} 
                     labelLine={{ strokeWidth: 1, stroke: "gray", strokeOpacity: 0.5 }}
                   >
-                    {(emotionData.length > 0 ? emotionData : pieData).map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
+                    {(selectedPrediction && selectedPrediction.emotions ? selectedPrediction.emotions : pieData)
+                      .map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))
+                    }
                   </Pie>
                   <Tooltip 
                     formatter={(value) => `${(value as number).toFixed(0)}%`}
@@ -516,6 +529,7 @@ export default function ModelPage() {
           </div>
         </Card>
 
+        {/* Right Card: Prediction History and Visualization */}
         <Card className="p-6 space-y-6 md:col-span-3">
           <div className="flex flex-col h-[600px]">
             {/* History Table Container */}
@@ -524,6 +538,7 @@ export default function ModelPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Time</TableHead>
+                    <TableHead>Video Name</TableHead>
                     <TableHead>Result</TableHead>
                     <TableHead>Confidence</TableHead>
                   </TableRow>
@@ -531,8 +546,13 @@ export default function ModelPage() {
                 <TableBody>
                   {predictionResults.length > 0
                     ? predictionResults.map((row, i) => (
-                        <TableRow key={i}>
+                        <TableRow
+                          key={i}
+                          onClick={() => setSelectedPrediction(row)}
+                          className="cursor-pointer hover:bg-gray-100"
+                        >
                           <TableCell>{row.time}</TableCell>
+                          <TableCell>{row.videoName}</TableCell>
                           <TableCell>{row.result}</TableCell>
                           <TableCell>{row.confidence}</TableCell>
                         </TableRow>
@@ -540,6 +560,7 @@ export default function ModelPage() {
                     : mockData.map((row, i) => (
                         <TableRow key={i}>
                           <TableCell>{row.time}</TableCell>
+                          <TableCell>{row.videoName}</TableCell>
                           <TableCell>{row.result}</TableCell>
                           <TableCell>{row.confidence}</TableCell>
                         </TableRow>
@@ -548,20 +569,27 @@ export default function ModelPage() {
               </Table>
             </div>
             {/* Visualization Container */}
-            {visualizationImg && (
-              <div className="flex-1 mt-6 overflow-hidden">
-                  <h3 className="text-lg font-semibold mt-2">Visualization</h3>
-                <Image
-                    src={visualizationImg}
+            <div className="flex-1 mt-6 overflow-hidden">
+              {selectedPrediction && selectedPrediction.visualization ? (
+                <>
+                  <h3 className="text-lg font-semibold mt-2">
+                    Visualization for {selectedPrediction.videoName} at {selectedPrediction.time}
+                  </h3>
+                  <Image
+                    src={selectedPrediction.visualization}
                     alt="Video frames with emotion predictions"
                     className="w-full h-full object-contain"
-                    layout="responsive"
                     width={800}
                     height={600}
                     priority
-                />
-              </div>
-            )}
+                  />
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <p>Select a prediction result to view visualization details.</p>
+                </div>
+              )}
+            </div>
           </div>
         </Card>
       </div>

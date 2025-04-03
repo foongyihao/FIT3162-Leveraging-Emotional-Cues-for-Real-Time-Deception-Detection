@@ -165,7 +165,7 @@ def process_video(video_path, output_folder, target_frames=300, ssim_threshold=0
         output_path = os.path.join(output_folder, f'frame_{idx:04d}.png')
         cv2.imwrite(output_path, frame)
 
-    # # Enhance image quality using Real-ESRGAN before saving
+    # Enhance image quality using Real-ESRGAN before saving
     # enhanced_frames = []
     # for idx, frame in enumerate(saved_frames):
     #     try:
