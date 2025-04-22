@@ -61,6 +61,7 @@ export default function ModelPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const inputMethodRef = useRef(inputMethod)
   const lastPredictionTimestamp = useRef<number>(Date.now())
 
   const mockData: PredictionResult[] = [
@@ -84,10 +85,11 @@ export default function ModelPage() {
     "#CCCCCC",  
   ]
 
-  async function startPredictProgressCheck() {
+  const startPredictProgressCheck = useCallback(async () => {
     if (pollTimer) {
       clearInterval(pollTimer)
     }
+    console.log("Starting progress check polling...");
     const timer = setInterval(async () => {
       try {
         const res = await fetch("http://localhost:5001/api/progress")
@@ -95,6 +97,7 @@ export default function ModelPage() {
         if (data.progress !== undefined) {
           setProgress(data.progress)
           if (data.progress >= 100) {
+            console.log("Progress reached 100, stopping poll.");
             clearInterval(timer)
             setPollTimer(null)
           }
@@ -104,9 +107,9 @@ export default function ModelPage() {
       }
     }, 500)
     setPollTimer(timer)
-  }
+  }, [pollTimer, setProgress, setPollTimer])
 
-  async function sendVideoForPrediction(videoData: File | Blob) {
+  const sendVideoForPrediction = useCallback(async (videoData: File | Blob) => {
     setProgress(0)
     startPredictProgressCheck()
 
@@ -139,7 +142,7 @@ export default function ModelPage() {
         }
 
         setPredictionResults((prev) => [...prev, predictionResult])
-        if (!selectedPrediction) setSelectedPrediction(predictionResult)
+        setSelectedPrediction(prevSelected => prevSelected ? prevSelected : predictionResult)
 
         if (data.emotions) {
           setEmotionData(data.emotions)
@@ -151,10 +154,10 @@ export default function ModelPage() {
       }
     } catch (err) {
       console.error("Prediction failed:", err)
-      setErrorMessage("Prediction failed. Please try again.\n" + err)
+      setErrorMessage("Prediction failed. Please try again.\n" + (err as Error).message)
       setShowError(true)
     }
-  }
+  }, [startPredictProgressCheck])
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -198,38 +201,44 @@ export default function ModelPage() {
   }, []);
 
   const stopCamera = useCallback(() => {
-    console.log("Stopping camera and recorder...");
+    console.log("--- stopCamera called ---");
     setRecorder(prevRecorder => {
       if (prevRecorder) {
-        console.log(`Recorder state before stop: ${prevRecorder.state}`);
+        console.log(`stopCamera: Recorder found (state: ${prevRecorder.state}). Stopping.`);
         if (prevRecorder.state === "recording") {
+          prevRecorder.onstart = null;
+          prevRecorder.ondataavailable = null;
+          prevRecorder.onerror = null;
           prevRecorder.onstop = null;
           prevRecorder.stop();
-          console.log("Recorder stop() called.");
+          console.log("stopCamera: Recorder stop() called.");
+        } else {
+          console.log(`stopCamera: Recorder was not recording (state: ${prevRecorder.state}).`);
         }
       } else {
-        console.log("No active recorder found to stop.");
+        console.log("stopCamera: No active recorder found to stop.");
       }
       return null;
     });
 
     setStream(prevStream => {
       if (prevStream) {
-        console.log("Stopping stream tracks...");
+        console.log("stopCamera: Stream found. Stopping tracks.");
         prevStream.getTracks().forEach((track) => track.stop());
       } else {
-         console.log("No active stream found to stop.");
+         console.log("stopCamera: No active stream found to stop.");
       }
       return null;
     });
 
     if (videoRef.current) {
         videoRef.current.srcObject = null;
+        console.log("stopCamera: Cleared video element source.");
     }
 
     setRecordedChunks([]);
-    console.log("Camera and recorder stopped.");
-  }, []);
+    console.log("--- stopCamera finished ---");
+  }, [])
 
   const startContinuousRecording = useCallback((mediaStream: MediaStream) => {
     if (!mediaStream) {
@@ -270,10 +279,12 @@ export default function ModelPage() {
             };
 
             newMediaRecorder.ondataavailable = (event) => {
-                console.log(`30s data available event fired, data size: ${event.data?.size || 0} bytes`);
-                if (event.data && event.data.size > 0) {
-                    console.log("Sending 30s video chunk for prediction...");
+                console.log(`ondataavailable: Event fired. Data size: ${event.data?.size || 0} bytes`);
+                if (inputMethodRef.current === 'camera' && event.data && event.data.size > 0) {
+                    console.log("ondataavailable: Still in camera mode. Blob received, sending for prediction...");
                     sendVideoForPrediction(event.data);
+                } else if (inputMethodRef.current !== 'camera') {
+                    console.log("ondataavailable: Input method changed away from camera. Skipping prediction.");
                 } else {
                     console.warn("Received empty data in ondataavailable event");
                 }
@@ -291,20 +302,22 @@ export default function ModelPage() {
             return null;
         }
     });
-  }, [getSupportedMimeType, setRecorder, setRecordedChunks, setErrorMessage, setShowError, stopCamera]);
+  }, [getSupportedMimeType, setRecorder, setRecordedChunks, setErrorMessage, setShowError, stopCamera, sendVideoForPrediction]);
 
   const startCamera = useCallback(async () => {
+    console.log(">>> startCamera called <<<");
     try {
-      console.log("Requesting camera and microphone access...");
+      console.log("startCamera: Calling stopCamera first...");
       stopCamera();
 
+      console.log("startCamera: Requesting camera access...");
       const mediaStream = await navigator.mediaDevices
         .getUserMedia({
           video: true,
           audio: false,
         });
 
-      console.log("Access granted to camera");
+      console.log("startCamera: Access granted.");
 
       if (!mediaStream) {
         throw new Error("Media stream is null or undefined");
@@ -316,9 +329,11 @@ export default function ModelPage() {
         videoRef.current.srcObject = mediaStream;
         videoRef.current.style.transform = "none";
         videoRef.current.onloadedmetadata = () => {
-          console.log("Video element loaded metadata, starting to play");
-          videoRef.current?.play().catch((e) => console.error("Error playing video:", e));
-          startContinuousRecording(mediaStream);
+          console.log("startCamera: video metadata loaded.");
+          videoRef.current?.play().then(() => {
+             console.log("startCamera: video playback started, calling startContinuousRecording.");
+             startContinuousRecording(mediaStream);
+          }).catch((e) => console.error("Error playing video:", e));
         };
       } else {
          console.warn("Video ref not available immediately, attempting to start recording anyway.");
@@ -330,7 +345,13 @@ export default function ModelPage() {
       setErrorMessage(`Could not access camera: ${(err as unknown as any).message}`);
       setShowError(true);
     }
-  }, [startContinuousRecording, stopCamera]);
+    console.log(">>> startCamera finished <<<");
+  }, [startContinuousRecording, stopCamera])
+
+  useEffect(() => {
+    inputMethodRef.current = inputMethod;
+    console.log(`Input method ref updated to: ${inputMethodRef.current}`);
+  }, [inputMethod]);
 
   useEffect(() => {
     if (inputMethod === "camera") {
