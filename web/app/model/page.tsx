@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Card } from "@/components/ui/card"
 import {
   Select,
@@ -50,12 +50,9 @@ export default function ModelPage() {
   const [videoSrc, setVideoSrc] = useState<string>("")
   const [inputMethod, setInputMethod] = useState<"upload" | "camera">("upload")
   const [stream, setStream] = useState<MediaStream | null>(null)
-  const [cameraTime, setCameraTime] = useState(0)
-  const [predictionTimer, setPredictionTimer] = useState<NodeJS.Timeout | null>(null)
   const [pollTimer, setPollTimer] = useState<NodeJS.Timeout | null>(null)
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null)
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([])
-  const [chunkTimestamps, setChunkTimestamps] = useState<number[]>([])
   const [predictionResults, setPredictionResults] = useState<PredictionResult[]>([])
   const [selectedPrediction, setSelectedPrediction] = useState<PredictionResult | null>(null)
   const [emotionData, setEmotionData] = useState<Array<{ name: string; value: number }>>([])
@@ -64,7 +61,6 @@ export default function ModelPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const requestDataIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const lastPredictionTimestamp = useRef<number>(Date.now())
 
   const mockData: PredictionResult[] = [
@@ -115,7 +111,8 @@ export default function ModelPage() {
     startPredictProgressCheck()
 
     const formData = new FormData()
-    formData.append("video", videoData)
+    const fileName = videoData instanceof File ? videoData.name : `live_recording_${new Date().toISOString()}.webm`
+    formData.append("video", videoData, fileName)
 
     try {
       const response = await fetch("http://localhost:5001/api/predict", {
@@ -136,16 +133,14 @@ export default function ModelPage() {
           time: new Date().toLocaleTimeString(),
           result: data.result || (data.prediction[0] > 0.5 ? "Deceptive" : "Truthful"),
           confidence: data.confidence || `${Math.round(Math.abs(data.prediction[0] - 0.5) * 200)}%`,
-          videoName: videoData instanceof File && videoData.name ? videoData.name : "-",
-          emotions: data.emotions, // expects an array of {name, value}
+          videoName: videoData instanceof File && videoData.name ? videoData.name : fileName,
+          emotions: data.emotions,
           visualization: data.visualization ? `data:image/png;base64,${data.visualization}` : undefined,
         }
 
         setPredictionResults((prev) => [...prev, predictionResult])
-        // Automatically select the prediction if none is selected.
         if (!selectedPrediction) setSelectedPrediction(predictionResult)
 
-        // Optionally update global states (if needed elsewhere)
         if (data.emotions) {
           setEmotionData(data.emotions)
         }
@@ -183,7 +178,7 @@ export default function ModelPage() {
     sendVideoForPrediction(file)
   }
 
-  function getSupportedMimeType() {
+  const getSupportedMimeType = useCallback(() => {
     const types = [
       'video/webm;codecs=vp9,opus',
       'video/webm;codecs=vp8,opus',
@@ -192,7 +187,7 @@ export default function ModelPage() {
     ];
     
     for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) {
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
         console.log(`Browser supports: ${type}`);
         return type;
       }
@@ -200,154 +195,114 @@ export default function ModelPage() {
     
     console.warn("None of the preferred MIME types are supported, using default");
     return '';  
-  }
+  }, []);
 
-  function startContinuousRecording() {
-    if (!stream) {
-      console.error("No stream available");
+  const stopCamera = useCallback(() => {
+    console.log("Stopping camera and recorder...");
+    setRecorder(prevRecorder => {
+      if (prevRecorder) {
+        console.log(`Recorder state before stop: ${prevRecorder.state}`);
+        if (prevRecorder.state === "recording") {
+          prevRecorder.onstop = null;
+          prevRecorder.stop();
+          console.log("Recorder stop() called.");
+        }
+      } else {
+        console.log("No active recorder found to stop.");
+      }
+      return null;
+    });
+
+    setStream(prevStream => {
+      if (prevStream) {
+        console.log("Stopping stream tracks...");
+        prevStream.getTracks().forEach((track) => track.stop());
+      } else {
+         console.log("No active stream found to stop.");
+      }
+      return null;
+    });
+
+    if (videoRef.current) {
+        videoRef.current.srcObject = null;
+    }
+
+    setRecordedChunks([]);
+    console.log("Camera and recorder stopped.");
+  }, []);
+
+  const startContinuousRecording = useCallback((mediaStream: MediaStream) => {
+    if (!mediaStream) {
+      console.error("No stream available for recording");
       return;
     }
-    
+    setRecorder(prevRecorder => {
+        if (prevRecorder) {
+            console.log("Recorder already exists.");
+            return prevRecorder;
+        }
+
+        try {
+            if (typeof MediaRecorder === 'undefined') {
+                throw new Error("MediaRecorder not supported in this browser");
+            }
+
+            const mimeType = getSupportedMimeType();
+            const options = mimeType ? { mimeType } : undefined;
+            console.log(`Creating MediaRecorder with options:`, options);
+
+            const newMediaRecorder = new MediaRecorder(mediaStream, options);
+
+            newMediaRecorder.onstart = () => {
+                console.log("MediaRecorder started with 30s timeslice");
+                setRecordedChunks([]);
+            };
+
+            newMediaRecorder.onerror = (event) => {
+                console.error("MediaRecorder error:", event);
+                setErrorMessage(`Recording error: ${(event as any)?.error?.message || 'Unknown error'}`);
+                setShowError(true);
+                stopCamera();
+            };
+
+            newMediaRecorder.onstop = () => {
+                console.log("MediaRecorder stopped");
+            };
+
+            newMediaRecorder.ondataavailable = (event) => {
+                console.log(`30s data available event fired, data size: ${event.data?.size || 0} bytes`);
+                if (event.data && event.data.size > 0) {
+                    console.log("Sending 30s video chunk for prediction...");
+                    sendVideoForPrediction(event.data);
+                } else {
+                    console.warn("Received empty data in ondataavailable event");
+                }
+            };
+
+            console.log("Starting MediaRecorder with 30000ms timeslice");
+            newMediaRecorder.start(30000);
+            console.log("MediaRecorder state after start:", newMediaRecorder.state);
+            return newMediaRecorder;
+
+        } catch (err) {
+            console.error("Error in startContinuousRecording:", err);
+            setErrorMessage(`Failed to start camera recording: ${(err as unknown as any).message}`);
+            setShowError(true);
+            return null;
+        }
+    });
+  }, [getSupportedMimeType, setRecorder, setRecordedChunks, setErrorMessage, setShowError, stopCamera]);
+
+  const startCamera = useCallback(async () => {
     try {
-      if (typeof MediaRecorder === 'undefined') {
-        throw new Error("MediaRecorder not supported in this browser");
-      }
-      
-      const mimeType = getSupportedMimeType();
-      
-      const options = mimeType ? { mimeType } : undefined;
-      console.log(`Creating MediaRecorder with options:`, options);
-      
-      const mediaRecorder = new MediaRecorder(stream, options);
-      
-      mediaRecorder.onstart = () => {
-        console.log("MediaRecorder started");
-      };
-      
-      mediaRecorder.onerror = (event) => {
-        console.error("MediaRecorder error:", event);
-      };
-      
-      mediaRecorder.onstop = () => {
-        console.log("MediaRecorder stopped");
-      };
-      
-      mediaRecorder.ondataavailable = (event) => {
-        console.log(`Data available event fired, data size: ${event.data?.size || 0} bytes`);
-        
-        if (event.data && event.data.size > 0) {
-          setRecordedChunks(prev => {
-            const newChunks = [...prev, event.data];
-            console.log(`Added chunk. Total chunks now: ${newChunks.length}`);
-            return newChunks;
-          });
-          
-          setChunkTimestamps(prev => {
-            const newTimestamps = [...prev, Date.now()];
-            return newTimestamps;
-          });
-        } else {
-          console.warn("Received empty data in ondataavailable event");
-        }
-      };
-      
-      console.log("Starting MediaRecorder with 1000ms timeslice");
-      mediaRecorder.start();
-      setRecorder(mediaRecorder);
-
-      requestDataIntervalRef.current = setInterval(() => {
-        if (mediaRecorder.state === "recording") {
-          mediaRecorder.requestData();
-        }
-      }, 1000);
-      console.log("MediaRecorder state after start:", mediaRecorder.state);
-      
-    } catch (err) {
-      console.error("Error in startContinuousRecording:", err);
-      setErrorMessage(`Failed to start camera recording: ${(err as unknown as any).message}`);
-      setShowError(true);
-    }
-  }
-
-  function processLast30SecondsOfVideo() {
-    console.log(`Processing - chunks available: ${recordedChunks.length}, timestamps: ${chunkTimestamps.length}`);
-
-    if (recordedChunks.length === 0) {
-      console.log("No video chunks available yet");
-      return;
-    }
-
-    const now = Date.now();
-    // Only look at chunks from the last 30 seconds
-    const oldestAllowedTimestamp = now - 30000;
-
-    // Gather the most recent chunks
-    const recentChunks: Blob[] = []
-    for (let i = 0; i < chunkTimestamps.length; i++) {
-      if (chunkTimestamps[i] >= oldestAllowedTimestamp) {
-        recentChunks.push(recordedChunks[i]);
-      }
-    }
-
-    if (recentChunks.length === 0) {
-      console.log("No new chunks available in the last 30 seconds");
-      return;
-    }
-
-    // Create a Blob for prediction
-    const blob = new Blob(recentChunks, { type: "video/webm" });
-    console.log(`Created blob of size: ${blob.size} bytes for the last 30s`);
-
-    // Start polling & send the video data
-    sendVideoForPrediction(blob);
-
-    // Remove only chunks older than 30 seconds
-    const newRecordedChunks: Blob[] = []
-    const newChunkTimestamps: number[] = []
-    for (let i = 0; i < chunkTimestamps.length; i++) {
-      if (chunkTimestamps[i] >= oldestAllowedTimestamp) {
-        newRecordedChunks.push(recordedChunks[i]);
-        newChunkTimestamps.push(chunkTimestamps[i]);
-      }
-    }
-    setRecordedChunks(newRecordedChunks);
-    setChunkTimestamps(newChunkTimestamps);
-  }
-
-  function startPredictionTimer() {
-    if (predictionTimer) {
-      clearInterval(predictionTimer);
-    }
-
-    console.log("Starting prediction timer");
-    const timer = setInterval(() => {
-      setCameraTime((prev) => {
-        const newTime = prev + 1;
-
-        if (newTime % 30 === 0) {
-          console.log(`30-second mark reached (${newTime}s), processing recent video...`);
-          processLast30SecondsOfVideo();
-        }
-
-        return newTime;
-      });
-    }, 1000);
-
-    setPredictionTimer(timer);
-    console.log("Prediction timer started");
-  }
-
-  async function startCamera() {
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Your browser doesn't support camera access");
-      }
-
       console.log("Requesting camera and microphone access...");
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false, 
-      });
+      stopCamera();
+
+      const mediaStream = await navigator.mediaDevices
+        .getUserMedia({
+          video: true,
+          audio: false,
+        });
 
       console.log("Access granted to camera");
 
@@ -359,62 +314,38 @@ export default function ModelPage() {
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        videoRef.current.style.transform = "none"; 
+        videoRef.current.style.transform = "none";
         videoRef.current.onloadedmetadata = () => {
           console.log("Video element loaded metadata, starting to play");
           videoRef.current?.play().catch((e) => console.error("Error playing video:", e));
+          startContinuousRecording(mediaStream);
         };
+      } else {
+         console.warn("Video ref not available immediately, attempting to start recording anyway.");
+         startContinuousRecording(mediaStream);
       }
 
-      setRecordedChunks([]);
-      setChunkTimestamps([]);
-
-      startPredictionTimer();
     } catch (err) {
       console.error("Error accessing camera:", err);
       setErrorMessage(`Could not access camera: ${(err as unknown as any).message}`);
       setShowError(true);
     }
-  }
-
-  function stopCamera() {
-    if (recorder) {
-      console.log("Stopping recorder...");
-      if (recorder.state === "recording") {
-        recorder.stop();
-      }
-      setRecorder(null);
-    }
-    if (stream) {
-      console.log("Stopping stream tracks...");
-      stream.getTracks().forEach((track) => track.stop());
-      setStream(null);
-    }
-    if (requestDataIntervalRef.current) {
-      clearInterval(requestDataIntervalRef.current);
-      requestDataIntervalRef.current = null;
-    }
-    if (predictionTimer) {
-      clearInterval(predictionTimer)
-      setPredictionTimer(null)
-    }
-
-    setCameraTime(0)
-    setRecordedChunks([])
-    setChunkTimestamps([])
-  }
+  }, [startContinuousRecording, stopCamera]);
 
   useEffect(() => {
     if (inputMethod === "camera") {
+      console.log("Input method changed to camera, starting...");
       startCamera()
     } else {
+      console.log("Input method changed to upload, stopping camera...");
       stopCamera()
     }
 
     return () => {
+      console.log("Cleanup: Stopping camera...");
       stopCamera()
     }
-  }, [inputMethod])
+  }, [inputMethod, startCamera, stopCamera])
 
   useEffect(() => {
     if (videoSrc && inputMethod === "upload") {
@@ -425,18 +356,11 @@ export default function ModelPage() {
     }
   }, [videoSrc, inputMethod])
 
-  useEffect(() => {
-    if (stream && inputMethod === "camera") {
-      startContinuousRecording();
-    }
-  }, [stream, inputMethod]);
-
   return (
     <main className="container mx-auto px-4 py-8">
       <canvas ref={canvasRef} style={{ display: "none" }} />
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
-        {/* Left Card: Video Preview and Emotion Distribution */}
         <Card className="p-6 space-y-6 md:col-span-2">
           <div className="relative aspect-video bg-muted rounded-lg overflow-hidden">
             {inputMethod === "upload" ? (
@@ -492,10 +416,12 @@ export default function ModelPage() {
                 </Button>
               </>
             ) : (
-              <p>Camera streaming in real time; predictions triggered every 30 seconds.</p>
+              <>
+                {progress < 100 && <Progress value={progress} className="w-full mb-4" />}
+                <p>Camera streaming live. Predictions run every 30 seconds.</p>
+              </>
             )}
           </div>
-          {/* Emotion Distribution: Use selected prediction if available */}
           <div className="flex flex-col gap-4">
             <div className="aspect-square bg-card rounded-lg flex items-center justify-center p-4 flex-1">
               <ResponsiveContainer width="100%" height="100%">
@@ -529,10 +455,8 @@ export default function ModelPage() {
           </div>
         </Card>
 
-        {/* Right Card: Prediction History and Visualization */}
         <Card className="p-6 space-y-6 md:col-span-3">
           <div className="flex flex-col h-[600px]">
-            {/* History Table Container */}
             <div className="flex-1 overflow-auto">
               <Table>
                 <TableHeader>
@@ -568,7 +492,6 @@ export default function ModelPage() {
                 </TableBody>
               </Table>
             </div>
-            {/* Visualization Container */}
             <div className="flex-1 mt-6 overflow-hidden">
               {selectedPrediction && selectedPrediction.visualization ? (
                 <>
