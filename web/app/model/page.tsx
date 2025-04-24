@@ -39,6 +39,7 @@ interface PredictionResult {
 	videoName: string
 	emotions?: Array<{ name: string; value: number }>
 	visualization?: string
+	videoBlob?: Blob
 }
 
 export default function ModelPage() {
@@ -92,15 +93,18 @@ export default function ModelPage() {
 	 * startPredictProgressCheck:
 	 *   Starts polling the /api/progress endpoint every 500ms,
 	 *   updating the `progress` state until it reaches 100%.
+	 *   Returns the interval ID for cleanup.
 	 */
-	const startPredictProgressCheck = async () => {
+	const startPredictProgressCheck = () => {
 		if (pollTimer) {
 			clearInterval(pollTimer)
 		}
+
 		const timer = setInterval(async () => {
 			try {
 				const res = await fetch("http://localhost:5001/api/progress")
 				const data = await res.json()
+
 				if (data.progress !== undefined) {
 					setProgress(data.progress)
 					if (data.progress >= 100) {
@@ -112,7 +116,9 @@ export default function ModelPage() {
 				console.error("Progress poll error:", err)
 			}
 		}, 500)
+
 		setPollTimer(timer)
+		return timer
 	}
 
 	/**
@@ -120,9 +126,10 @@ export default function ModelPage() {
 	 *   Uploads a video Blob or File to the /api/predict endpoint,
 	 *   handles errors, and updates `predictionResults`, `emotionData`,
 	 *   and `visualizationImg` based on the server response.
+	 *   Also stores the video blob/file with the result.
 	 */
 	const sendVideoForPrediction = async (videoData: File | Blob) => {
-		setProgress(0)
+		// Only start progress check - don't manually set progress
 		startPredictProgressCheck()
 
 		const formData = new FormData()
@@ -144,6 +151,16 @@ export default function ModelPage() {
 			console.log("Prediction result:", data)
 
 			if (data.prediction) {
+				let storedBlob: Blob;
+				if (videoData instanceof File) {
+					const buffer = await videoData.arrayBuffer();
+					storedBlob = new Blob([buffer], { type: videoData.type });
+				} else {
+					storedBlob = new Blob([await videoData.arrayBuffer()], { 
+						type: videoData.type || 'video/webm' 
+					});
+				}
+
 				const predictionResult: PredictionResult = {
 					time: new Date().toLocaleTimeString(),
 					result: data.result || (data.prediction[0] > 0.5 ? "Deceptive" : "Truthful"),
@@ -151,10 +168,13 @@ export default function ModelPage() {
 					videoName: videoData instanceof File && videoData.name ? videoData.name : fileName,
 					emotions: data.emotions,
 					visualization: data.visualization ? `data:image/png;base64,${data.visualization}` : undefined,
+					videoBlob: storedBlob,
 				}
 
 				setPredictionResults((prev) => [...prev, predictionResult])
-				setSelectedPrediction(prevSelected => prevSelected ? prevSelected : predictionResult)
+				if (!selectedPrediction) {
+					setSelectedPrediction(predictionResult)
+				}
 
 				if (data.emotions) {
 					setEmotionData(data.emotions)
@@ -192,10 +212,72 @@ export default function ModelPage() {
 			return
 		}
 
+		if (videoSrc && videoSrc.startsWith("blob:")) {
+			URL.revokeObjectURL(videoSrc)
+			console.log("Revoked previous videoSrc URL (file select):", videoSrc)
+		}
+
 		const videoUrl = URL.createObjectURL(file)
 		setVideoSrc(videoUrl)
 
 		sendVideoForPrediction(file)
+	}
+
+	/**
+	 * handlePredictionSelect:
+	 *   Sets the selected prediction, switches the view to 'upload' mode,
+	 *   and displays the video associated with the selected prediction.
+	 *   Manages object URL creation and revocation for the video preview.
+	 */
+	const handlePredictionSelect = async (prediction: PredictionResult) => {
+		setSelectedPrediction(prediction)
+
+		if (videoSrc && videoSrc.startsWith("blob:")) {
+			URL.revokeObjectURL(videoSrc)
+			console.log("Revoked previous videoSrc URL:", videoSrc)
+		}
+
+		if (prediction.videoBlob) {
+			try {
+				console.log("Creating object URL from blob:", 
+					prediction.videoBlob.size, 
+					"bytes, type:", 
+					prediction.videoBlob.type);
+				
+				const blobWithProperType = new Blob(
+					[await prediction.videoBlob.arrayBuffer()], 
+					{ type: 'video/webm' }
+				);
+				
+				const newVideoUrl = URL.createObjectURL(blobWithProperType);
+				console.log("Created new videoSrc URL:", newVideoUrl);
+				
+				setInputMethod("upload");
+				
+				setTimeout(() => {
+					setVideoSrc(newVideoUrl);
+					
+					setTimeout(() => {
+						const videoEl = document.getElementById("video-preview") as HTMLVideoElement;
+						if (videoEl) {
+							videoEl.load();
+							videoEl.play().catch(e => console.log("Couldn't autoplay:", e));
+						}
+					}, 100);
+				}, 50);
+				
+			} catch (error) {
+				console.error("Error creating object URL:", error)
+				setErrorMessage("Could not display the selected video.")
+				setShowError(true)
+				setVideoSrc("")
+				setInputMethod("upload")
+			}
+		} else {
+			console.warn("Selected prediction has no video data.")
+			setVideoSrc("")
+			setInputMethod("upload") 
+		}
 	}
 
 	/**
@@ -233,7 +315,7 @@ export default function ModelPage() {
 			return
 		}
 		console.log("--- stopCamera called ---")
-		isCameraActiveRef.current = false // Mark camera as inactive
+		isCameraActiveRef.current = false
 
 		if (countdownIntervalRef.current) {
 			clearInterval(countdownIntervalRef.current)
@@ -299,6 +381,12 @@ export default function ModelPage() {
 					console.log("MediaRecorder started with 30s timeslice")
 					setRecordedChunks([])
 					setCountdown(30)
+					
+					// Start progress polling when recording starts - it will show 0%
+					// until the backend starts processing
+					startPredictProgressCheck()
+					
+					// Only update countdown, not progress
 					if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
 					countdownIntervalRef.current = setInterval(() => {
 						setCountdown(prev => (prev > 0 ? prev - 1 : 0))
@@ -316,6 +404,7 @@ export default function ModelPage() {
 					console.log("MediaRecorder stopped")
 					if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
 					setCountdown(0)
+					// Keep progress polling active to show processing progress
 				}
 
 				newMediaRecorder.ondataavailable = (event) => {
@@ -323,15 +412,20 @@ export default function ModelPage() {
 					if (inputMethod === 'camera') {
 						setCountdown(30)
 						if (event.data && event.data.size > 0) {
-              console.log("ondataavailable: Still in camera mode. Blob received, sending for prediction...")
-							// Always wrap in a new Blob to ensure a valid, standalone video file
-							const chunk = new Blob([event.data], { type: event.data.type || newMediaRecorder.mimeType });
+							console.log("ondataavailable: Blob received with type:", event.data.type)
+							
+							const chunk = new Blob([event.data], { 
+								type: event.data.type || 'video/webm;codecs=vp9,opus' 
+							});
+							
+							console.log("Created new blob:", chunk.size, "bytes, type:", chunk.type);
+							// Progress polling will be started/continued in sendVideoForPrediction
 							sendVideoForPrediction(chunk)
 						} else {
 							console.warn("Received empty data in ondataavailable event")
+							// Don't manually set progress
 						}
 					} else {
-						console.log("ondataavailable: Input method changed away from camera. Skipping prediction.")
 						if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
 						setCountdown(0)
 					}
@@ -358,7 +452,7 @@ export default function ModelPage() {
 			return
 		}
 		console.log(">>> startCamera called <<<")
-		isCameraActiveRef.current = true // Mark camera as active
+		isCameraActiveRef.current = true
 
 		try {
 			console.log("startCamera: Requesting camera access...")
@@ -388,7 +482,7 @@ export default function ModelPage() {
 			console.error("Error accessing camera:", err)
 			setErrorMessage(`Could not access camera: ${(err as unknown as any).message}`)
 			setShowError(true)
-			isCameraActiveRef.current = false // Reset camera active flag on error
+			isCameraActiveRef.current = false
 		}
 		console.log(">>> startCamera finished <<<")
 	}
@@ -409,17 +503,23 @@ export default function ModelPage() {
 		return () => {
 			console.log("Cleanup: Stopping camera...")
 			stopCamera()
+			if (videoSrc && videoSrc.startsWith("blob:")) {
+				URL.revokeObjectURL(videoSrc)
+				console.log("Cleanup: Revoked videoSrc URL:", videoSrc)
+			}
 		}
 	}, [inputMethod])
 
 	useEffect(() => {
 		if (videoSrc && inputMethod === "upload") {
-			const videoEl = document.getElementById("video-preview") as HTMLVideoElement
+			console.log("Video source changed, loading:", videoSrc);
+			const videoEl = document.getElementById("video-preview") as HTMLVideoElement;
 			if (videoEl) {
-				videoEl.load()
+				videoEl.load();
+				videoEl.play().catch(e => console.log("Couldn't autoplay:", e));
 			}
 		}
-	}, [videoSrc, inputMethod])
+	}, [videoSrc, inputMethod]);
 
 	useEffect(() => {
 		if (!recorder || inputMethod != "camera") return
@@ -429,6 +529,15 @@ export default function ModelPage() {
 		console.log("MediaRecorder state after start:", recorder.state)
 
 	}, [inputMethod, recorder]);
+
+	useEffect(() => {
+		return () => {
+			if (videoSrc && videoSrc.startsWith("blob:")) {
+				URL.revokeObjectURL(videoSrc);
+				console.log("Unmount cleanup: Revoked URL:", videoSrc);
+			}
+		};
+	}, []);
 
 	return (
 		<main className="container mx-auto px-4 py-8">
@@ -444,6 +553,8 @@ export default function ModelPage() {
 									src={videoSrc}
 									controls
 									className="absolute inset-0 w-full h-full object-cover"
+									playsInline
+									key={videoSrc}
 								/>
 							) : (
 								<div className="absolute inset-0 flex items-center justify-center">
@@ -478,9 +589,9 @@ export default function ModelPage() {
 					</Select>
 
 					<div className="space-y-4">
+						{progress < 100 && <Progress value={progress} className="w-full"/>}
 						{inputMethod === "upload" ? (
 							<>
-								{progress < 100 && <Progress value={progress} className="w-full"/>}
 								<input
 									type="file"
 									ref={fileInputRef}
@@ -497,7 +608,6 @@ export default function ModelPage() {
 							</>
 						) : (
 							<>
-								{progress < 100 && <Progress value={progress} className="w-full mb-4"/>}
 								<p>Camera streaming live. Predictions run every 30 seconds.</p>
 							</>
 						)}
@@ -552,8 +662,8 @@ export default function ModelPage() {
 										? predictionResults.map((row, i) => (
 											<TableRow
 												key={i}
-												onClick={() => setSelectedPrediction(row)}
-												className="cursor-pointer hover:bg-gray-100"
+												onClick={() => handlePredictionSelect(row)}
+												className={`cursor-pointer hover:bg-muted ${selectedPrediction === row ? 'bg-muted' : ''}`}
 											>
 												<TableCell>{row.time}</TableCell>
 												<TableCell>{row.videoName}</TableCell>
