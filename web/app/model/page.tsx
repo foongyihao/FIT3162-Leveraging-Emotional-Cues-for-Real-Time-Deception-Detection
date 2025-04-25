@@ -50,18 +50,15 @@ export default function ModelPage() {
 	const [progress, setProgress] = useState(100)
 	const [videoSrc, setVideoSrc] = useState<string>("")
 	const [inputMethod, setInputMethod] = useState<"upload" | "camera">("upload")
-	const [stream, setStream] = useState<MediaStream | null>(null)
 	const [pollTimer, setPollTimer] = useState<NodeJS.Timeout | null>(null)
 	const [recorder, setRecorder] = useState<MediaRecorder | null>(null)
-	const [recordedChunks, setRecordedChunks] = useState<Blob[]>([])
 	const [predictionResults, setPredictionResults] = useState<PredictionResult[]>([])
 	const [selectedPrediction, setSelectedPrediction] = useState<PredictionResult | null>(null)
-	const [emotionData, setEmotionData] = useState<Array<{ name: string; value: number }>>([])
-	const [visualizationImg, setVisualizationImg] = useState<string>("")
 	const [countdown, setCountdown] = useState<number>(0)
 
 	const isCameraActiveRef = useRef(false)
 	const isMountedRef = useRef(false)
+	const cameraStreamRef = useRef<MediaStream | null>(null)
 
 	const fileInputRef = useRef<HTMLInputElement>(null)
 	const videoRef = useRef<HTMLVideoElement>(null)
@@ -88,6 +85,20 @@ export default function ModelPage() {
 		"#999999",
 		"#CCCCCC",
 	]
+
+	/**
+	 * handleError:
+	 *   Sets the error message state and displays the error dialog.
+	 *   Also logs the error to the console.
+	 * @param message - The user-facing error message.
+	 * @param error - Optional error object for console logging.
+	 */
+	const handleError = (message: string, error?: unknown) => {
+		console.error(message, error); // Keep console log for debugging
+		const detailedMessage = error instanceof Error ? `${message}\n${error.message}` : message;
+		setErrorMessage(detailedMessage);
+		setShowError(true);
+	};
 
 	/**
 	 * startPredictProgressCheck:
@@ -175,19 +186,9 @@ export default function ModelPage() {
 				if (!selectedPrediction) {
 					setSelectedPrediction(predictionResult)
 				}
-
-				if (data.emotions) {
-					setEmotionData(data.emotions)
-				}
-
-				if (data.visualization) {
-					setVisualizationImg(`data:image/png;base64,${data.visualization}`)
-				}
 			}
 		} catch (err) {
-			console.error("Prediction failed:", err)
-			setErrorMessage("Prediction failed. Please try again.\n" + (err as Error).message)
-			setShowError(true)
+			handleError("Prediction failed. Please try again.", err);
 		}
 	}
 
@@ -201,14 +202,12 @@ export default function ModelPage() {
 		if (!file) return
 
 		if (!file.type.startsWith("video/")) {
-			setErrorMessage("Please select a valid video file.")
-			setShowError(true)
+			handleError("Please select a valid video file.");
 			return
 		}
 
 		if (file.size > 100 * 1024 * 1024) {
-			setErrorMessage("File is too large. Please select a video under 100MB.")
-			setShowError(true)
+			handleError("File is too large. Please select a video under 100MB.");
 			return
 		}
 
@@ -267,9 +266,7 @@ export default function ModelPage() {
 				}, 50);
 				
 			} catch (error) {
-				console.error("Error creating object URL:", error)
-				setErrorMessage("Could not display the selected video.")
-				setShowError(true)
+				handleError("Could not display the selected video.", error);
 				setVideoSrc("")
 				setInputMethod("upload")
 			}
@@ -332,20 +329,26 @@ export default function ModelPage() {
 			return null
 		})
 
-		setStream(prevStream => {
-			if (prevStream) {
-				console.log("stopCamera: Stream found. Stopping tracks.")
-				prevStream.getTracks().forEach(track => track.stop())
-			}
-			return null
-		})
-
-		if (videoRef.current) {
-			videoRef.current.srcObject = null
-			console.log("stopCamera: Cleared video element source.")
+		// --- Added: Stop media stream tracks ---
+		if (cameraStreamRef.current) {
+			cameraStreamRef.current.getTracks().forEach(track => track.stop())
+			cameraStreamRef.current = null
+		}
+		if (videoRef.current && videoRef.current.srcObject) {
+			const stream = videoRef.current.srcObject as MediaStream;
+			console.log("stopCamera: Getting tracks from stream:", stream);
+			const tracks = stream.getTracks();
+			console.log(`stopCamera: Found ${tracks.length} tracks.`);
+			tracks.forEach(track => {
+				console.log(`stopCamera: Stopping track: ${track.kind} (${track.label})`);
+				track.stop();
+			});
+			videoRef.current.srcObject = null; // Clear the source *after* stopping tracks
+			console.log("stopCamera: Cleared video element source and stopped tracks.");
+		} else {
+			console.log("stopCamera: No active stream found on video element.");
 		}
 
-		setRecordedChunks([])
 		console.log("--- stopCamera finished ---")
 	}
 
@@ -379,7 +382,6 @@ export default function ModelPage() {
 
 				newMediaRecorder.onstart = () => {
 					console.log("MediaRecorder started with 30s timeslice")
-					setRecordedChunks([])
 					setCountdown(30)
 					
 					// Start progress polling when recording starts - it will show 0%
@@ -394,9 +396,9 @@ export default function ModelPage() {
 				}
 
 				newMediaRecorder.onerror = (event) => {
-					console.error("MediaRecorder error:", event)
-					setErrorMessage(`Recording error: ${(event as any)?.error?.message || 'Unknown error'}`)
-					setShowError(true)
+					// Access the specific error if available
+					const error = (event as any)?.error;
+					handleError("Recording error occurred.", error);
 					stopCamera()
 				}
 
@@ -410,7 +412,7 @@ export default function ModelPage() {
 				newMediaRecorder.ondataavailable = (event) => {
 					console.log(`ondataavailable: Event fired. Data size: ${event.data?.size || 0} bytes`)
 					if (inputMethod === 'camera') {
-						setCountdown(30)
+						setCountdown(30) // Reset countdown for the next chunk
 						if (event.data && event.data.size > 0) {
 							console.log("ondataavailable: Blob received with type:", event.data.type)
 							
@@ -419,13 +421,13 @@ export default function ModelPage() {
 							});
 							
 							console.log("Created new blob:", chunk.size, "bytes, type:", chunk.type);
-							// Progress polling will be started/continued in sendVideoForPrediction
-							sendVideoForPrediction(chunk)
+							sendVideoForPrediction(chunk) // Send chunk for prediction
 						} else {
 							console.warn("Received empty data in ondataavailable event")
-							// Don't manually set progress
+
 						}
 					} else {
+						// If not in camera mode anymore when data becomes available, stop countdown
 						if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
 						setCountdown(0)
 					}
@@ -433,9 +435,7 @@ export default function ModelPage() {
 				return newMediaRecorder
 
 			} catch (err) {
-				console.error("Error in startContinuousRecording:", err)
-				setErrorMessage(`Failed to start camera recording: ${(err as unknown as any).message}`)
-				setShowError(true)
+				handleError("Failed to initialize camera recording.", err);
 				return null
 			}
 		})
@@ -463,7 +463,7 @@ export default function ModelPage() {
 
 			console.log("startCamera: Access granted.")
 
-			setStream(mediaStream)
+			cameraStreamRef.current = mediaStream
 
 			if (videoRef.current) {
 				videoRef.current.srcObject = mediaStream
@@ -473,24 +473,31 @@ export default function ModelPage() {
 					videoRef.current?.play().then(() => {
 						console.log("startCamera: video playback started, calling startContinuousRecording.")
 						createContinuousRecorder(mediaStream)
-					}).catch(e => console.error("Error playing video:", e))
+					}).catch(e => {
+						handleError("Error playing camera preview.", e);
+						stopCamera(); // Stop camera if playback fails
+					})
 				}
 			} else {
-				throw new Error("Video element not found, try again later.")
+				handleError("Video element not found. Cannot start camera.");
+				isCameraActiveRef.current = false; // Ensure state reflects failure
 			}
 		} catch (err) {
-			console.error("Error accessing camera:", err)
-			setErrorMessage(`Could not access camera: ${(err as unknown as any).message}`)
-			setShowError(true)
+			handleError("Could not access camera.", err);
 			isCameraActiveRef.current = false
 		}
 		console.log(">>> startCamera finished <<<")
 	}
 
+	/**
+	 * useEffect hook to handle changes in the input method.
+	 * Starts the camera if 'camera' is selected, stops it otherwise.
+	 * Also handles cleanup on component unmount or when inputMethod changes again.
+	 */
 	useEffect(() => {
 		if (!isMountedRef.current) {
 			isMountedRef.current = true
-			return
+			return // Skip first render
 		}
 		if (inputMethod === "camera") {
 			console.log("Input method changed to camera, starting...")
@@ -500,29 +507,41 @@ export default function ModelPage() {
 			stopCamera()
 		}
 
+		// Cleanup function: ensures camera is stopped when the effect re-runs or component unmounts.
 		return () => {
-			console.log("Cleanup: Stopping camera...")
+			console.log("Cleanup: Stopping camera due to input method change or unmount...")
 			stopCamera()
 			if (videoSrc && videoSrc.startsWith("blob:")) {
 				URL.revokeObjectURL(videoSrc)
 				console.log("Cleanup: Revoked videoSrc URL:", videoSrc)
 			}
 		}
-	}, [inputMethod])
+	}, [inputMethod]) // Dependency: Re-run when inputMethod changes
 
+	/**
+	 * useEffect hook to handle changes in the video source URL when in 'upload' mode.
+	 * Loads and attempts to play the new video when `videoSrc` changes.
+	 */
 	useEffect(() => {
 		if (videoSrc && inputMethod === "upload") {
 			console.log("Video source changed, loading:", videoSrc);
 			const videoEl = document.getElementById("video-preview") as HTMLVideoElement;
 			if (videoEl) {
-				videoEl.load();
-				videoEl.play().catch(e => console.log("Couldn't autoplay:", e));
+				videoEl.load(); // Ensure the new source is loaded
+				videoEl.play().catch(e => {
+					handleError("Couldn't automatically play the selected video.", e);
+				});
 			}
 		}
-	}, [videoSrc, inputMethod]);
+	}, [videoSrc, inputMethod]); // Dependencies: Re-run when videoSrc or inputMethod changes
 
+	/**
+	 * useEffect hook to start the MediaRecorder when it's created and the input method is 'camera'.
+	 * This ensures recording starts only when the recorder instance is ready and camera mode is active.
+	 */
 	useEffect(() => {
-		if (!recorder || inputMethod != "camera") return
+		// Only start if recorder exists and we are in camera mode
+		if (!recorder || inputMethod !== "camera") return
 
 		console.log("Starting MediaRecorder with 30000ms timeslice")
 		recorder.start(30000)
@@ -536,8 +555,8 @@ export default function ModelPage() {
 				URL.revokeObjectURL(videoSrc);
 				console.log("Unmount cleanup: Revoked URL:", videoSrc);
 			}
-		};
-	}, []);
+		}
+	}, [inputMethod, recorder]); // Dependencies: Re-run when inputMethod or recorder instance changes
 
 	return (
 		<main className="container mx-auto px-4 py-8">
@@ -711,10 +730,12 @@ export default function ModelPage() {
 				<AlertDialogContent>
 					<AlertDialogHeader>
 						<AlertDialogTitle>Error</AlertDialogTitle>
-						<AlertDialogDescription>{errorMessage}</AlertDialogDescription>
+						<AlertDialogDescription style={{ whiteSpace: 'pre-wrap' }}>
+							{errorMessage}
+						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogAction>OK</AlertDialogAction>
+						<AlertDialogAction onClick={() => setShowError(false)}>OK</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
