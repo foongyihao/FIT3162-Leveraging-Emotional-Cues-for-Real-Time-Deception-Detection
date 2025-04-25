@@ -28,8 +28,14 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import {Upload} from "lucide-react"
-import {PieChart, Pie, Cell, ResponsiveContainer, Tooltip} from "recharts"
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {Upload, Clock, AlertCircle, Info, Database, HelpCircle} from "lucide-react"
+import {PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip} from "recharts"
 import Image from "next/image"
 
 interface PredictionResult {
@@ -40,6 +46,7 @@ interface PredictionResult {
 	emotions?: Array<{ name: string; value: number }>
 	visualization?: string
 	videoBlob?: Blob
+	error?: string // Add an optional error field
 }
 
 export default function ModelPage() {
@@ -54,29 +61,17 @@ export default function ModelPage() {
 	const [recorder, setRecorder] = useState<MediaRecorder | null>(null)
 	const [predictionResults, setPredictionResults] = useState<PredictionResult[]>([])
 	const [selectedPrediction, setSelectedPrediction] = useState<PredictionResult | null>(null)
-	const [countdown, setCountdown] = useState<number>(0)
+	const [elapsedTime, setElapsedTime] = useState<number>(0) // Replace countdown with elapsedTime
 
 	const isCameraActiveRef = useRef(false)
 	const isMountedRef = useRef(false)
 	const cameraStreamRef = useRef<MediaStream | null>(null)
+	const recorderRef = useRef<MediaRecorder | null>(null) // Use a ref to access the current recorder instance reliably
 
 	const fileInputRef = useRef<HTMLInputElement>(null)
 	const videoRef = useRef<HTMLVideoElement>(null)
 	const canvasRef = useRef<HTMLCanvasElement>(null)
-	const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
-
-	const mockData: PredictionResult[] = [
-		{time: "0:02", result: "Deceptive", confidence: "95%", videoName: "-"},
-		{time: "0:05", result: "Truth", confidence: "87%", videoName: "-"},
-		{time: "0:08", result: "Truth", confidence: "92%", videoName: "-"},
-	]
-
-	const pieData = [
-		{name: "Happiness", value: 45},
-		{name: "Surprise", value: 25},
-		{name: "Contempt", value: 15},
-		{name: "Neutral", value: 15},
-	]
+	const timerIntervalRef = useRef<NodeJS.Timeout | null>(null) // Rename from countdownIntervalRef
 
 	const COLORS = [
 		"#000000",
@@ -98,6 +93,27 @@ export default function ModelPage() {
 		const detailedMessage = error instanceof Error ? `${message}\n${error.message}` : message;
 		setErrorMessage(detailedMessage);
 		setShowError(true);
+	};
+
+	/**
+	 * formatTimeRemaining:
+	 *   Formats seconds into MM:SS display format
+	 * @param totalSeconds - Seconds to format
+	 * @returns formatted time string
+	 */
+	const formatTimeRemaining = (totalSeconds: number): string => {
+		const minutes = Math.floor(totalSeconds / 60);
+		const seconds = totalSeconds % 60;
+		return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+	};
+
+	/**
+	 * getRemainingSeconds:
+	 *   Calculate remaining seconds until next 30-second mark
+	 * @returns number of seconds remaining
+	 */
+	const getRemainingSeconds = (): number => {
+		return 30 - (elapsedTime % 30);
 	};
 
 	/**
@@ -137,60 +153,61 @@ export default function ModelPage() {
 	 *   Uploads a video Blob or File to the /api/predict endpoint,
 	 *   handles errors, and updates `predictionResults`, `emotionData`,
 	 *   and `visualizationImg` based on the server response.
-	 *   Also stores the video blob/file with the result.
+	 *   Also stores the video blob/file with the result, even on failure.
 	 */
 	const sendVideoForPrediction = async (videoData: File | Blob) => {
-		// Only start progress check - don't manually set progress
-		startPredictProgressCheck()
+		startPredictProgressCheck();
+		const formData = new FormData();
+		const fileName = videoData instanceof File ? videoData.name : `live_recording_${new Date().toISOString()}.webm`;
+		formData.append("video", videoData, fileName);
 
-		const formData = new FormData()
-		const fileName = videoData instanceof File ? videoData.name : `live_recording_${new Date().toISOString()}.webm`
-		formData.append("video", videoData, fileName)
+		let storedBlob = videoData; // Use the original Blob directly
 
 		try {
 			const response = await fetch("http://localhost:5001/api/predict", {
 				method: "POST",
 				body: formData,
-			})
-
-			const data = await response.json()
-
+			});
+			const data = await response.json();
 			if (!response.ok) {
-				throw new Error(`Server responded with ${response.status}: ${data.error || response.statusText}`)
+				throw new Error(`Server responded with ${response.status}: ${data.error || response.statusText}`);
 			}
 
-			console.log("Prediction result:", data)
+			const predictionResult: PredictionResult = {
+				time: new Date().toLocaleTimeString(),
+				result: data.result || (data.prediction[0] > 0.5 ? "Deceptive" : "Truthful"),
+				confidence: data.confidence || `${Math.round(Math.abs(data.prediction[0] - 0.5) * 200)}%`,
+				videoName: videoData instanceof File && videoData.name ? videoData.name : fileName,
+				emotions: data.emotions,
+				visualization: data.visualization ? `data:image/png;base64,${data.visualization}` : undefined,
+				videoBlob: storedBlob,
+			};
 
-			if (data.prediction) {
-				let storedBlob: Blob;
-				if (videoData instanceof File) {
-					const buffer = await videoData.arrayBuffer();
-					storedBlob = new Blob([buffer], { type: videoData.type });
-				} else {
-					storedBlob = new Blob([await videoData.arrayBuffer()], { 
-						type: videoData.type || 'video/webm' 
-					});
-				}
-
-				const predictionResult: PredictionResult = {
-					time: new Date().toLocaleTimeString(),
-					result: data.result || (data.prediction[0] > 0.5 ? "Deceptive" : "Truthful"),
-					confidence: data.confidence || `${Math.round(Math.abs(data.prediction[0] - 0.5) * 200)}%`,
-					videoName: videoData instanceof File && videoData.name ? videoData.name : fileName,
-					emotions: data.emotions,
-					visualization: data.visualization ? `data:image/png;base64,${data.visualization}` : undefined,
-					videoBlob: storedBlob,
-				}
-
-				setPredictionResults((prev) => [...prev, predictionResult])
-				if (!selectedPrediction) {
-					setSelectedPrediction(predictionResult)
-				}
+			setPredictionResults((prev) => [...prev, predictionResult]);
+			if (!selectedPrediction) {
+				setSelectedPrediction(predictionResult);
 			}
 		} catch (err) {
-			handleError("Prediction failed. Please try again.", err);
+			const errorMessage = err instanceof Error ? err.message : "An unknown error occurred during prediction.";
+			handleError(`Prediction failed for ${fileName}. Recording saved.`, err);
+
+			const failureResult: PredictionResult = {
+				time: new Date().toLocaleTimeString(),
+				result: "Prediction Failed",
+				confidence: "-",
+				videoName: fileName,
+				videoBlob: storedBlob,
+				error: errorMessage,
+			};
+			setPredictionResults((prev) => [...prev, failureResult]);
+		} finally {
+			if (pollTimer) {
+				clearInterval(pollTimer);
+				setPollTimer(null);
+			}
+			setProgress(100);
 		}
-	}
+	};
 
 	/**
 	 * handleFileSelect:
@@ -238,24 +255,24 @@ export default function ModelPage() {
 
 		if (prediction.videoBlob) {
 			try {
-				console.log("Creating object URL from blob:", 
-					prediction.videoBlob.size, 
-					"bytes, type:", 
+				console.log("Creating object URL from blob:",
+					prediction.videoBlob.size,
+					"bytes, type:",
 					prediction.videoBlob.type);
-				
+
 				const blobWithProperType = new Blob(
-					[await prediction.videoBlob.arrayBuffer()], 
-					{ type: 'video/webm' }
+					[await prediction.videoBlob.arrayBuffer()],
+					{type: 'video/webm'}
 				);
-				
+
 				const newVideoUrl = URL.createObjectURL(blobWithProperType);
 				console.log("Created new videoSrc URL:", newVideoUrl);
-				
+
 				setInputMethod("upload");
-				
+
 				setTimeout(() => {
 					setVideoSrc(newVideoUrl);
-					
+
 					setTimeout(() => {
 						const videoEl = document.getElementById("video-preview") as HTMLVideoElement;
 						if (videoEl) {
@@ -264,7 +281,7 @@ export default function ModelPage() {
 						}
 					}, 100);
 				}, 50);
-				
+
 			} catch (error) {
 				handleError("Could not display the selected video.", error);
 				setVideoSrc("")
@@ -273,7 +290,7 @@ export default function ModelPage() {
 		} else {
 			console.warn("Selected prediction has no video data.")
 			setVideoSrc("")
-			setInputMethod("upload") 
+			setInputMethod("upload")
 		}
 	}
 
@@ -304,7 +321,7 @@ export default function ModelPage() {
 	/**
 	 * stopCamera:
 	 *   Stops the MediaRecorder (if recording), stops all camera tracks,
-	 *   clears the video element source, and resets related state.
+	 *   clears the video element source, stops the timer, and resets related state.
 	 */
 	const stopCamera = () => {
 		if (!isCameraActiveRef.current) {
@@ -314,137 +331,142 @@ export default function ModelPage() {
 		console.log("--- stopCamera called ---")
 		isCameraActiveRef.current = false
 
-		if (countdownIntervalRef.current) {
-			clearInterval(countdownIntervalRef.current)
-			countdownIntervalRef.current = null
+		// Stop timer
+		if (timerIntervalRef.current) {
+			clearInterval(timerIntervalRef.current)
+			timerIntervalRef.current = null
+			console.log("stopCamera: Cleared elapsedTime timer.")
 		}
-		setCountdown(0)
 
-		setRecorder(prevRecorder => {
-			if (prevRecorder && prevRecorder.state === "recording") {
-				console.log(`stopCamera: Recorder found (state: ${prevRecorder.state}). Stopping.`)
-				prevRecorder.stop()
-				console.log("stopCamera: Recorder stop() called.")
-			}
-			return null
-		})
+		// Stop recorder using the ref
+		const currentRecorder = recorderRef.current;
+		if (currentRecorder && currentRecorder.state === "recording") {
+			console.log(`stopCamera: Recorder found (state: ${currentRecorder.state}). Stopping.`);
+			// Remove event listeners before stopping to prevent unwanted restarts
+			currentRecorder.onstop = null;
+			currentRecorder.ondataavailable = null;
+			currentRecorder.onerror = null;
+			currentRecorder.stop();
+			console.log("stopCamera: Recorder stop() called.");
+		}
+		recorderRef.current = null; // Clear the ref
+		setRecorder(null); // Clear the state as well
 
-		// --- Added: Stop media stream tracks ---
 		if (cameraStreamRef.current) {
 			cameraStreamRef.current.getTracks().forEach(track => track.stop())
 			cameraStreamRef.current = null
 		}
 		if (videoRef.current && videoRef.current.srcObject) {
 			const stream = videoRef.current.srcObject as MediaStream;
-			console.log("stopCamera: Getting tracks from stream:", stream);
-			const tracks = stream.getTracks();
-			console.log(`stopCamera: Found ${tracks.length} tracks.`);
-			tracks.forEach(track => {
-				console.log(`stopCamera: Stopping track: ${track.kind} (${track.label})`);
-				track.stop();
-			});
-			videoRef.current.srcObject = null; // Clear the source *after* stopping tracks
-			console.log("stopCamera: Cleared video element source and stopped tracks.");
-		} else {
-			console.log("stopCamera: No active stream found on video element.");
+			stream.getTracks().forEach(track => track.stop());
+			videoRef.current.srcObject = null;
 		}
 
 		console.log("--- stopCamera finished ---")
 	}
 
 	/**
+	 * restartRecorder:
+	 *   Called after a chunk is processed (from onstop) to set up the next recording cycle.
+	 */
+	const restartRecorder = () => {
+		if (!isCameraActiveRef.current) {
+			console.log("restartRecorder: Camera is not active, not restarting.");
+			return;
+		}
+		if (!cameraStreamRef.current || !cameraStreamRef.current.active) {
+			handleError("Cannot restart recorder: Camera stream is missing or inactive.");
+			stopCamera();
+			return;
+		}
+		console.log("restartRecorder: Setting up next recorder instance...");
+		createContinuousRecorder(cameraStreamRef.current);
+		// The useEffect[recorder] hook will start the new recorder instance
+	};
+
+	/**
 	 * createContinuousRecorder:
-	 *   Creates a MediaRecorder on the provided stream that records 30s chunks.
-	 *   Handles onstart, ondataavailable (triggers prediction), onerror,
-	 *   and onstop events, and manages a countdown timer.
+	 *   Creates a MediaRecorder instance, sets up event handlers (including onstop for restart),
+	 *   and updates the recorder state and ref. Does NOT start the recording itself.
 	 */
 	const createContinuousRecorder = (mediaStream: MediaStream) => {
-		if (!mediaStream) {
-			console.error("No stream available for recording")
-			return
+		if (!mediaStream || !mediaStream.active) {
+			handleError("No active stream available for recording");
+			stopCamera();
+			return;
 		}
-		setRecorder(prevRecorder => {
-			if (prevRecorder) {
-				console.log("Recorder already exists.")
-				return prevRecorder
+
+		// Stop previous recorder if exists (belt-and-suspenders)
+		if (recorderRef.current && recorderRef.current.state === "recording") {
+			console.warn("createContinuousRecorder: Found existing recording recorder. Stopping it first.");
+			recorderRef.current.onstop = null; // Prevent restart loop
+			recorderRef.current.stop();
+		}
+
+		try {
+			if (typeof MediaRecorder === 'undefined') {
+				throw new Error("MediaRecorder not supported in this browser")
 			}
 
-			try {
-				if (typeof MediaRecorder === 'undefined') {
-					throw new Error("MediaRecorder not supported in this browser")
-				}
+			const mimeType = getSupportedMimeType()
+			const options = mimeType ? {mimeType} : undefined
+			console.log(`Creating MediaRecorder with options:`, options)
 
-				const mimeType = getSupportedMimeType()
-				const options = mimeType ? {mimeType} : undefined
-				console.log(`Creating MediaRecorder with options:`, options)
+			const newMediaRecorder = new MediaRecorder(mediaStream, options)
+			recorderRef.current = newMediaRecorder; // Update the ref immediately
 
-				const newMediaRecorder = new MediaRecorder(mediaStream, options)
-
-				newMediaRecorder.onstart = () => {
-					console.log("MediaRecorder started with 30s timeslice")
-					setCountdown(30)
-					
-					// Start progress polling when recording starts - it will show 0%
-					// until the backend starts processing
-					startPredictProgressCheck()
-					
-					// Only update countdown, not progress
-					if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
-					countdownIntervalRef.current = setInterval(() => {
-						setCountdown(prev => (prev > 0 ? prev - 1 : 0))
-					}, 1000)
-				}
-
-				newMediaRecorder.onerror = (event) => {
-					// Access the specific error if available
-					const error = (event as any)?.error;
-					handleError("Recording error occurred.", error);
-					stopCamera()
-				}
-
-				newMediaRecorder.onstop = () => {
-					console.log("MediaRecorder stopped")
-					if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
-					setCountdown(0)
-					// Keep progress polling active to show processing progress
-				}
-
-				newMediaRecorder.ondataavailable = (event) => {
-					console.log(`ondataavailable: Event fired. Data size: ${event.data?.size || 0} bytes`)
-					if (inputMethod === 'camera') {
-						setCountdown(30) // Reset countdown for the next chunk
-						if (event.data && event.data.size > 0) {
-							console.log("ondataavailable: Blob received with type:", event.data.type)
-							
-							const chunk = new Blob([event.data], { 
-								type: event.data.type || 'video/webm;codecs=vp9,opus' 
-							});
-							
-							console.log("Created new blob:", chunk.size, "bytes, type:", chunk.type);
-							sendVideoForPrediction(chunk) // Send chunk for prediction
-						} else {
-							console.warn("Received empty data in ondataavailable event")
-
-						}
-					} else {
-						// If not in camera mode anymore when data becomes available, stop countdown
-						if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
-						setCountdown(0)
-					}
-				}
-				return newMediaRecorder
-
-			} catch (err) {
-				handleError("Failed to initialize camera recording.", err);
-				return null
+			newMediaRecorder.onstart = () => {
+				console.log("MediaRecorder started (manual cycle)")
 			}
-		})
+
+			newMediaRecorder.onerror = (event) => {
+				const error = (event as any)?.error;
+				handleError("Recording error occurred.", error);
+				stopCamera() // Stop everything on error
+			}
+
+			newMediaRecorder.onstop = () => {
+				console.log("MediaRecorder stopped (manual cycle)")
+				// Check if we should restart (i.e., wasn't stopped by user changing mode)
+				if (isCameraActiveRef.current) {
+					console.log("onstop: Camera still active, calling restartRecorder.");
+					restartRecorder();
+				} else {
+					console.log("onstop: Camera not active, not restarting.");
+				}
+			}
+
+			newMediaRecorder.ondataavailable = (event) => {
+				console.log(`ondataavailable: Event fired. Data size: ${event.data?.size || 0} bytes`)
+				// Check camera active state *again* here for safety
+				if (isCameraActiveRef.current && event.data && event.data.size > 0) {
+					console.log("ondataavailable: Blob received with type:", event.data.type)
+
+					const chunk = new Blob([event.data], {
+						type: event.data.type || getSupportedMimeType() || 'video/webm' // Use detected or default MIME type
+					});
+
+					console.log("Created new blob:", chunk.size, "bytes, type:", chunk.type);
+					sendVideoForPrediction(chunk)
+				} else {
+					console.warn("ondataavailable: Ignoring data - camera not active or data empty.")
+				}
+			}
+			console.log("createContinuousRecorder: New recorder instance created and ref updated.");
+			setRecorder(newMediaRecorder); // Update state to trigger useEffect
+
+		} catch (err) {
+			handleError("Failed to initialize camera recording.", err);
+			recorderRef.current = null;
+			setRecorder(null);
+			stopCamera(); // Clean up if initialization fails
+		}
 	}
 
 	/**
 	 * startCamera:
-	 *   Requests camera access, attaches the stream to the video element,
-	 *   and invokes `startContinuousRecording` once playback begins.
+	 *   Requests camera access, attaches stream, starts the 30s stop timer,
+	 *   and calls `createContinuousRecorder` to set up the initial recorder.
 	 */
 	const startCamera = async () => {
 		if (isCameraActiveRef.current) {
@@ -454,60 +476,85 @@ export default function ModelPage() {
 		console.log(">>> startCamera called <<<")
 		isCameraActiveRef.current = true
 
+		// Reset and start timer - THIS timer now calls stop()
+		setElapsedTime(0)
+		if (timerIntervalRef.current) {
+			clearInterval(timerIntervalRef.current)
+		}
+
+		timerIntervalRef.current = setInterval(() => {
+			setElapsedTime(prev => {
+				const nextTime = prev + 1;
+				// Stop the recorder every 30 seconds
+				if (nextTime > 0 && nextTime % 30 === 0) {
+					console.log(`Elapsed time ${nextTime}s: Stopping recorder for chunk.`);
+					const currentRecorder = recorderRef.current; // Use ref
+					if (currentRecorder && currentRecorder.state === "recording") {
+						currentRecorder.stop(); // This triggers ondataavailable, then onstop (which restarts)
+					} else {
+						console.warn(`Timer interval: Recorder not found or not recording (state: ${currentRecorder?.state})`);
+					}
+				}
+				return nextTime;
+			});
+		}, 1000)
+		console.log("startCamera: Started 30s stop timer.")
+
 		try {
 			console.log("startCamera: Requesting camera access...")
 			const mediaStream = await navigator.mediaDevices.getUserMedia({
 				video: true,
 				audio: false,
 			})
-
 			console.log("startCamera: Access granted.")
-
 			cameraStreamRef.current = mediaStream
 
 			if (videoRef.current) {
 				videoRef.current.srcObject = mediaStream
-				videoRef.current.style.transform = "none"
+				videoRef.current.style.transform = "none" // Reset potential transforms
 				videoRef.current.onloadedmetadata = () => {
 					console.log("startCamera: video metadata loaded.")
 					videoRef.current?.play().then(() => {
-						console.log("startCamera: video playback started, calling startContinuousRecording.")
+						console.log("startCamera: video playback started, calling createContinuousRecorder for initial setup.")
+						// Create the *first* recorder. useEffect[recorder] will start it.
 						createContinuousRecorder(mediaStream)
 					}).catch(e => {
 						handleError("Error playing camera preview.", e);
-						stopCamera(); // Stop camera if playback fails
+						stopCamera();
 					})
 				}
+				videoRef.current.onerror = (e) => {
+					handleError("Error loading video metadata.", e);
+					stopCamera();
+				}
 			} else {
-				handleError("Video element not found. Cannot start camera.");
-				isCameraActiveRef.current = false; // Ensure state reflects failure
+				throw new Error("Video element not found.");
 			}
 		} catch (err) {
-			handleError("Could not access camera.", err);
-			isCameraActiveRef.current = false
+			handleError("Could not access or set up camera.", err);
+			stopCamera(); // Ensure full cleanup on error
 		}
 		console.log(">>> startCamera finished <<<")
 	}
 
 	/**
 	 * useEffect hook to handle changes in the input method.
-	 * Starts the camera if 'camera' is selected, stops it otherwise.
-	 * Also handles cleanup on component unmount or when inputMethod changes again.
+	 * Starts the camera setup if 'camera' is selected, stops it otherwise.
+	 * Handles cleanup on component unmount or when inputMethod changes again.
 	 */
 	useEffect(() => {
 		if (!isMountedRef.current) {
 			isMountedRef.current = true
-			return // Skip first render
+			return
 		}
 		if (inputMethod === "camera") {
-			console.log("Input method changed to camera, starting...")
+			console.log("Input method changed to camera, starting camera setup...")
 			startCamera()
 		} else {
 			console.log("Input method changed to upload, stopping camera...")
 			stopCamera()
 		}
 
-		// Cleanup function: ensures camera is stopped when the effect re-runs or component unmounts.
 		return () => {
 			console.log("Cleanup: Stopping camera due to input method change or unmount...")
 			stopCamera()
@@ -516,7 +563,7 @@ export default function ModelPage() {
 				console.log("Cleanup: Revoked videoSrc URL:", videoSrc)
 			}
 		}
-	}, [inputMethod]) // Dependency: Re-run when inputMethod changes
+	}, [inputMethod])
 
 	/**
 	 * useEffect hook to handle changes in the video source URL when in 'upload' mode.
@@ -527,36 +574,41 @@ export default function ModelPage() {
 			console.log("Video source changed, loading:", videoSrc);
 			const videoEl = document.getElementById("video-preview") as HTMLVideoElement;
 			if (videoEl) {
-				videoEl.load(); // Ensure the new source is loaded
+				videoEl.load();
 				videoEl.play().catch(e => {
-					handleError("Couldn't automatically play the selected video.", e);
+					handleError("Couldn't play the selected video.", e);
 				});
 			}
 		}
-	}, [videoSrc, inputMethod]); // Dependencies: Re-run when videoSrc or inputMethod changes
+	}, [videoSrc, inputMethod]);
 
 	/**
-	 * useEffect hook to start the MediaRecorder when it's created and the input method is 'camera'.
-	 * This ensures recording starts only when the recorder instance is ready and camera mode is active.
+	 * useEffect hook to start the MediaRecorder when it's created/set in state
+	 * and the input method is 'camera'. Handles both initial start and restarts.
 	 */
 	useEffect(() => {
-		// Only start if recorder exists and we are in camera mode
-		if (!recorder || inputMethod !== "camera") return
+		// Use the recorder from state for triggering, but the ref for actions
+		const currentRecorder = recorderRef.current;
 
-		console.log("Starting MediaRecorder with 30000ms timeslice")
-		recorder.start(30000)
-		console.log("MediaRecorder state after start:", recorder.state)
-
-	}, [inputMethod, recorder]);
-
-	useEffect(() => {
-		return () => {
-			if (videoSrc && videoSrc.startsWith("blob:")) {
-				URL.revokeObjectURL(videoSrc);
-				console.log("Unmount cleanup: Revoked URL:", videoSrc);
-			}
+		if (!currentRecorder || inputMethod !== "camera" || !isCameraActiveRef.current) {
+			return;
 		}
-	}, [inputMethod, recorder]); // Dependencies: Re-run when inputMethod or recorder instance changes
+
+		if (currentRecorder.state === "inactive") {
+			console.log("useEffect[recorder]: Recorder ready and inactive. Starting recording (manual cycle).")
+			try {
+				// Start without timeslice, manual stop/start cycle handles chunks
+				currentRecorder.start();
+				console.log("useEffect[recorder]: MediaRecorder state after start:", currentRecorder.state)
+			} catch (e) {
+				handleError("Failed to start recording via useEffect.", e);
+				stopCamera()
+			}
+		} else {
+			console.log(`useEffect[recorder]: Recorder exists but not inactive (state: ${currentRecorder.state}). Not starting again.`)
+		}
+
+	}, [recorder, inputMethod]); // Depend on recorder state change
 
 	return (
 		<main className="container mx-auto px-4 py-8">
@@ -577,7 +629,7 @@ export default function ModelPage() {
 								/>
 							) : (
 								<div className="absolute inset-0 flex items-center justify-center">
-									<p className="text-muted-foreground">Upload a video to preview</p>
+									<p className="text-muted-foreground">No preview</p>
 								</div>
 							)
 						) : (
@@ -590,9 +642,13 @@ export default function ModelPage() {
 								style={{transform: "none"}}
 							/>
 						)}
-						{inputMethod === 'camera' && countdown > 0 && (
-							<div className="absolute top-2 left-2 bg-red-600 text-white text-lg font-bold px-3 py-1 rounded shadow">
-								{countdown}
+						{inputMethod === 'camera' && (
+							<div
+								className="absolute top-2 left-2 bg-black/60 text-white px-3 py-1.5 rounded-lg shadow flex items-center space-x-2">
+								<Clock className="h-4 w-4"/>
+								<span className="font-mono font-medium tabular-nums">
+                  {formatTimeRemaining(getRemainingSeconds())}
+                </span>
 							</div>
 						)}
 					</div>
@@ -622,44 +678,73 @@ export default function ModelPage() {
 								<Button onClick={() => fileInputRef.current?.click()}
 								        className="w-full flex items-center justify-center gap-2">
 									<Upload className="h-4 w-4"/>
-									Upload Video
+									Upload
 								</Button>
 							</>
 						) : (
 							<>
-								<p>Camera streaming live. Predictions run every 30 seconds.</p>
+								<p className="text-xs text-muted-foreground text-center">
+									Camera is rolling! Prediction will start after 30 seconds
+								</p>
 							</>
 						)}
 					</div>
 					<div className="flex flex-col gap-4">
-						<div className="aspect-square bg-card rounded-lg flex items-center justify-center p-4 flex-1">
-							<ResponsiveContainer width="100%" height="100%">
-								<PieChart>
-									<Pie
-										data={selectedPrediction && selectedPrediction.emotions ? selectedPrediction.emotions : pieData}
-										cx="50%"
-										cy="50%"
-										innerRadius="50%"
-										outerRadius="60%"
-										fill="#8884d8"
-										paddingAngle={10}
-										dataKey="value"
-										nameKey="name"
-										label={(entry) => entry.name}
-										labelLine={{strokeWidth: 1, stroke: "gray", strokeOpacity: 0.5}}
-									>
-										{(selectedPrediction && selectedPrediction.emotions ? selectedPrediction.emotions : pieData)
-											.map((entry, index) => (
+						<div
+							className="aspect-square bg-card rounded-lg flex items-center justify-center p-4 flex-1 overflow-hidden border border-border">
+							{selectedPrediction?.error ? (
+								<div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
+									<AlertCircle className="h-8 w-8 text-muted-foreground mb-2"/>
+									<p className="text-sm font-medium text-foreground">
+										Emotions playing hide and seek
+									</p>
+									<p className="text-xs text-muted-foreground max-w-[200px]">
+										Our emotion detector hit a snag. Let's try another video clip!
+									</p>
+								</div>
+							) : selectedPrediction?.emotions && selectedPrediction.emotions.length > 0 ? (
+								<ResponsiveContainer width="100%" height="100%">
+									<PieChart>
+										<Pie
+											data={selectedPrediction.emotions}
+											cx="50%"
+											cy="50%"
+											innerRadius="50%"
+											outerRadius="60%"
+											fill="#8884d8"
+											paddingAngle={10}
+											dataKey="value"
+											nameKey="name"
+											label={(entry) => entry.name}
+											labelLine={{strokeWidth: 1, stroke: "gray", strokeOpacity: 0.5}}
+										>
+											{selectedPrediction.emotions.map((entry, index) => (
 												<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]}/>
-											))
-										}
-									</Pie>
-									<Tooltip
-										formatter={(value) => `${(value as number).toFixed(0)}%`}
-										labelFormatter={(name) => `${name}`}
-									/>
-								</PieChart>
-							</ResponsiveContainer>
+											))}
+										</Pie>
+										<RechartsTooltip
+											formatter={(value) => `${(value as number).toFixed(0)}%`}
+											labelFormatter={(name) => `${name}`}
+										/>
+									</PieChart>
+								</ResponsiveContainer>
+							) : (
+								<div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
+									<div className="flex items-center gap-1">
+										<p className="text-sm font-medium text-foreground">Emotion radar</p>
+										<TooltipProvider>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<HelpCircle className="h-4 w-4 text-foreground cursor-pointer"/>
+												</TooltipTrigger>
+												<TooltipContent className="p-2 max-w-[220px]">
+													<p className="text-xs">Pick a result or record something new to see emotions in action</p>
+												</TooltipContent>
+											</Tooltip>
+										</TooltipProvider>
+									</div>
+								</div>
+							)}
 						</div>
 					</div>
 				</Card>
@@ -677,8 +762,8 @@ export default function ModelPage() {
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{predictionResults.length > 0
-										? predictionResults.map((row, i) => (
+									{predictionResults.length > 0 ? (
+										predictionResults.map((row, i) => (
 											<TableRow
 												key={i}
 												onClick={() => handlePredictionSelect(row)}
@@ -690,35 +775,72 @@ export default function ModelPage() {
 												<TableCell>{row.confidence}</TableCell>
 											</TableRow>
 										))
-										: mockData.map((row, i) => (
-											<TableRow key={i}>
-												<TableCell>{row.time}</TableCell>
-												<TableCell>{row.videoName}</TableCell>
-												<TableCell>{row.result}</TableCell>
-												<TableCell>{row.confidence}</TableCell>
-											</TableRow>
-										))}
+									) : (
+										<TableRow>
+											<TableCell colSpan={4} className="py-12">
+												<div className="flex items-center justify-center py-12">
+													<div className="flex items-center gap-4 px-4">
+														<Database className="h-10 w-10 text-muted-foreground" strokeWidth={1}/>
+														<div className="text-left">
+															<p className="text-sm font-medium text-foreground">Empty report</p>
+															<p className="text-xs text-muted-foreground max-w-xs mt-1">
+																Try uploading a video or activate the camera to start your first prediction
+															</p>
+														</div>
+													</div>
+												</div>
+											</TableCell>
+										</TableRow>
+									)}
 								</TableBody>
 							</Table>
 						</div>
-						<div className="flex-1 mt-6 overflow-hidden">
-							{selectedPrediction && selectedPrediction.visualization ? (
-								<>
-									<h3 className="text-lg font-semibold mt-2">
-										Visualization for {selectedPrediction.videoName} at {selectedPrediction.time}
+						<div className="flex-1 mt-6 overflow-hidden border-t border-border pt-4">
+							{selectedPrediction?.error ? (
+								<div className="flex flex-col items-center justify-center h-full text-center p-6 bg-muted rounded-lg">
+									<AlertCircle className="h-10 w-10 text-muted-foreground mb-3"/>
+									<h3 className="text-lg font-medium text-foreground">
+										Houston, we have a problem
 									</h3>
-									<Image
-										src={selectedPrediction.visualization}
-										alt="Video frames with emotion predictions"
-										className="w-full h-full object-contain"
-										width={800}
-										height={600}
-										priority
-									/>
+									<p className="mt-1 text-sm text-muted-foreground">
+										{selectedPrediction.videoName} at {selectedPrediction.time}
+									</p>
+									<div
+										className="mt-4 p-3 bg-card border border-border rounded text-sm text-muted-foreground max-w-md overflow-auto">
+										<p className="font-mono whitespace-pre-wrap">{selectedPrediction.error}</p>
+									</div>
+								</div>
+							) : selectedPrediction?.visualization ? (
+								<>
+									<h3 className="text-lg font-semibold mt-2 mb-4 text-foreground">
+										The truth reveals itself for {selectedPrediction.videoName}
+									</h3>
+									<div className="border border-border rounded-lg overflow-hidden">
+										<Image
+											src={selectedPrediction.visualization}
+											alt="Video frames with emotion predictions"
+											className="w-full h-full object-contain"
+											width={800}
+											height={600}
+											priority
+										/>
+									</div>
 								</>
 							) : (
-								<div className="flex items-center justify-center h-full">
-									<p>Select a prediction result to view visualization details.</p>
+								<div className="flex flex-col items-center justify-center h-full text-center">
+									<div className="flex items-center gap-1">
+										<p className="text-sm font-medium text-foreground">Visual insights</p>
+										<TooltipProvider>
+											<Tooltip>
+												<TooltipTrigger asChild>
+													<HelpCircle className="h-4 w-4 text-foreground cursor-pointer"/>
+												</TooltipTrigger>
+												<TooltipContent className="p-2 max-w-[220px]">
+													<p className="text-xs">Click any result in the table above to reveal the visual evidence</p>
+												</TooltipContent>
+											</Tooltip>
+										</TooltipProvider>
+									</div>
 								</div>
 							)}
 						</div>
@@ -727,15 +849,22 @@ export default function ModelPage() {
 			</div>
 
 			<AlertDialog open={showError} onOpenChange={setShowError}>
-				<AlertDialogContent>
+				<AlertDialogContent className="max-w-md">
 					<AlertDialogHeader>
-						<AlertDialogTitle>Error</AlertDialogTitle>
-						<AlertDialogDescription style={{ whiteSpace: 'pre-wrap' }}>
-							{errorMessage}
+						<div className="flex items-center gap-2">
+							<AlertCircle className="h-5 w-5 text-foreground"/>
+							<AlertDialogTitle>Oops! A Tiny Hiccup</AlertDialogTitle>
+						</div>
+						<AlertDialogDescription className="mt-3">
+							<div className="p-3 bg-muted rounded-md border border-border">
+								<p className="text-sm text-foreground whitespace-pre-wrap font-medium">
+									{errorMessage}
+								</p>
+							</div>
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogAction onClick={() => setShowError(false)}>OK</AlertDialogAction>
+						<AlertDialogAction>Got it!</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
