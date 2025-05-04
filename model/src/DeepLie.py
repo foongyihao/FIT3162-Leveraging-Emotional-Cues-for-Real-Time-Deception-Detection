@@ -3,9 +3,9 @@ import tensorflow.keras.backend as K
 import cv2
 import numpy as np
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-from constants import NOTEBOOKS_PATH
+from constants import NOTEBOOKS_PATH, DATA_PATH
 import tempfile
 from MediaPipeCropping import process_video, initialize_face_mesh
 import matplotlib
@@ -303,6 +303,17 @@ def predict_route():
 def get_progress():
     global progress_value
     return jsonify({"progress": progress_value})
+
+@app.route("/api/codebook", methods=["GET"])
+def get_codebook():
+    codebook_path = os.path.join(DATA_PATH, "MU3D", "MU3D Codebook.xlsx")
+    if not os.path.exists(codebook_path):
+        return jsonify({"error": "Codebook file not found"}), 404
+    
+    return send_file(codebook_path, 
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    as_attachment=True,
+                    download_name='MU3D_Codebook.xlsx')
 
 if __name__ == '__main__':
     app.run(debug=True, host="0.0.0.0", port=5001)

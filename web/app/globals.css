@@ -80,3 +80,12 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Hide nextjs-portal elements, often used by libraries like Radix UI */
+.nextjs-portal {
+  display: none;
+}
+
+body.hide-nextjs-portal nextjs-portal {
+  display: none;
+}
