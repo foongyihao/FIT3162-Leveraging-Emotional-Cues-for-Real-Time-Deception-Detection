@@ -43,7 +43,7 @@ html[data-excel-viewer-theme="dark"] {
 
 .x-spreadsheet {
     flex: 1 1 auto;
-    height: 100vh;
+    height: 80vh;
     width: 100vw;
     margin: auto;
     font-size: 14px;
@@ -307,7 +307,7 @@ html[data-excel-viewer-theme="dark"] {
     pointer-events: none;
     top: 0;
     left: 0;
-    width: 80%;
+    width: 100%;
     height: 100%;
 }
 
