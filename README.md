@@ -159,7 +159,7 @@ Make sure to replace `path/to/your/file.npy` with the actual path to your `.npy`
    cd model
    pip install -r [name]-requirements.txt # Depending on the model you are using, replace [name] with the model name
    ```
-3. Download the pre-trained model (if available):
+3. Run the pre-trained model (if available):
 
    ```bash
    cd model
@@ -176,7 +176,14 @@ Make sure to replace `path/to/your/file.npy` with the actual path to your `.npy`
    cd web
    npm run dev
    ```
-2. Open your browser and navigate to `http://localhost:3000`
+2. Run the backend server:
+
+   ```bash
+   cd model
+   python src/DeepLie.py
+   ```
+   
+3. Open your browser and navigate to `http://localhost:3000`
 
 ## Technologies Used
 

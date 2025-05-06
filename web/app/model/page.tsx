@@ -62,6 +62,7 @@ export default function ModelPage() {
 	const [predictionResults, setPredictionResults] = useState<PredictionResult[]>([])
 	const [selectedPrediction, setSelectedPrediction] = useState<PredictionResult | null>(null)
 	const [elapsedTime, setElapsedTime] = useState<number>(0) // Replace countdown with elapsedTime
+	const INTERVAL_TIME = 10
 
 	const isCameraActiveRef = useRef(false)
 	const isMountedRef = useRef(false)
@@ -109,11 +110,11 @@ export default function ModelPage() {
 
 	/**
 	 * getRemainingSeconds:
-	 *   Calculate remaining seconds until next 30-second mark
+	 *   Calculate remaining seconds until next interval mark
 	 * @returns number of seconds remaining
 	 */
 	const getRemainingSeconds = (): number => {
-		return 30 - (elapsedTime % 30);
+		return INTERVAL_TIME - (elapsedTime % INTERVAL_TIME);
 	};
 
 	/**
@@ -486,7 +487,7 @@ export default function ModelPage() {
 			setElapsedTime(prev => {
 				const nextTime = prev + 1;
 				// Stop the recorder every 30 seconds
-				if (nextTime > 0 && nextTime % 30 === 0) {
+				if (nextTime > 0 && nextTime % INTERVAL_TIME === 0) {
 					console.log(`Elapsed time ${nextTime}s: Stopping recorder for chunk.`);
 					const currentRecorder = recorderRef.current; // Use ref
 					if (currentRecorder && currentRecorder.state === "recording") {
@@ -498,7 +499,7 @@ export default function ModelPage() {
 				return nextTime;
 			});
 		}, 1000)
-		console.log("startCamera: Started 30s stop timer.")
+		console.log("startCamera: Started stop timer.")
 
 		try {
 			console.log("startCamera: Requesting camera access...")
@@ -684,7 +685,7 @@ export default function ModelPage() {
 						) : (
 							<>
 								<p className="text-xs text-muted-foreground text-center">
-									Camera is rolling! Prediction will start after 30 seconds
+									Camera is rolling! Prediction will start after {INTERVAL_TIME} seconds
 								</p>
 							</>
 						)}
