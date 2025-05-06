@@ -43,7 +43,7 @@ html[data-excel-viewer-theme="dark"] {
 
 .x-spreadsheet {
     flex: 1 1 auto;
-    height: 80vh;
+    height: 100vh;
     width: 100vw;
     margin: auto;
     font-size: 14px;
@@ -308,7 +308,7 @@ html[data-excel-viewer-theme="dark"] {
     top: 0;
     left: 0;
     width: 80%;
-    height: 80%;
+    height: 100%;
 }
 
 .x-spreadsheet-selector .hide-input {
