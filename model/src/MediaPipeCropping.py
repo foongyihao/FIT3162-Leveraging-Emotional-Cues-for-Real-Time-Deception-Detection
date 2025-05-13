@@ -121,27 +121,28 @@ def process_video(video_path, output_folder, target_frames=300, ssim_threshold=0
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = face_mesh.process(rgb_frame)
             if results.multi_face_landmarks:
-                for face_landmarks in results.multi_face_landmarks:
-                    img_h, img_w, _ = frame.shape
-                    aligned_frame = align_face(frame, face_landmarks, img_w, img_h)
-                    left_eye, right_eye, nose_tip, forehead_y, chin_y = get_facial_landmarks(face_landmarks, img_w, img_h)
-                    rotation_matrix = compute_rotation_matrix(left_eye, right_eye, img_w, img_h)
-                    landmarks = np.array([(int(lm.x * img_w), int(lm.y * img_h)) for lm in face_landmarks.landmark])
-                    transformed_landmarks = transform_landmarks(landmarks, rotation_matrix)
-                    x_min, y_min, x_max, y_max = calculate_face_bounding_box(transformed_landmarks, forehead_y, chin_y, img_w, img_h)
-                    face_crop = aligned_frame[y_min:y_max, x_min:x_max]
-                    face_crop_resized = cv2.resize(face_crop, (128, 128))
-                    
-                    if last_face_crop is not None:
-                        face_crop_gray = cv2.cvtColor(face_crop_resized, cv2.COLOR_BGR2GRAY)
-                        last_face_crop_gray = cv2.cvtColor(last_face_crop, cv2.COLOR_BGR2GRAY)
-                        ssim_score, _ = ssim(face_crop_gray, last_face_crop_gray, full=True)
-                        if ssim_score < ssim_threshold:
-                            saved_frames.append(face_crop_resized)
-                            last_face_crop = face_crop_resized
-                    else:
+                # Process only the first detected face
+                face_landmarks = results.multi_face_landmarks[0]
+                img_h, img_w, _ = frame.shape
+                aligned_frame = align_face(frame, face_landmarks, img_w, img_h)
+                left_eye, right_eye, nose_tip, forehead_y, chin_y = get_facial_landmarks(face_landmarks, img_w, img_h)
+                rotation_matrix = compute_rotation_matrix(left_eye, right_eye, img_w, img_h)
+                landmarks = np.array([(int(lm.x * img_w), int(lm.y * img_h)) for lm in face_landmarks.landmark])
+                transformed_landmarks = transform_landmarks(landmarks, rotation_matrix)
+                x_min, y_min, x_max, y_max = calculate_face_bounding_box(transformed_landmarks, forehead_y, chin_y, img_w, img_h)
+                face_crop = aligned_frame[y_min:y_max, x_min:x_max]
+                face_crop_resized = cv2.resize(face_crop, (128, 128))
+                
+                if last_face_crop is not None:
+                    face_crop_gray = cv2.cvtColor(face_crop_resized, cv2.COLOR_BGR2GRAY)
+                    last_face_crop_gray = cv2.cvtColor(last_face_crop, cv2.COLOR_BGR2GRAY)
+                    ssim_score, _ = ssim(face_crop_gray, last_face_crop_gray, full=True)
+                    if ssim_score < ssim_threshold:
                         saved_frames.append(face_crop_resized)
                         last_face_crop = face_crop_resized
+                else:
+                    saved_frames.append(face_crop_resized)
+                    last_face_crop = face_crop_resized
         except Exception as e:
             print(f"Error processing frame {frame_count}: {e}")
         frame_count += 1

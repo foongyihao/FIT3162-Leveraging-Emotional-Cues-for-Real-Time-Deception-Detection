@@ -34,9 +34,26 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip"
-import {Upload, Clock, AlertCircle, Info, Database, HelpCircle} from "lucide-react"
+import {
+	Upload,
+	Clock,
+	AlertCircle,
+	Info,
+	Database,
+	HelpCircle,
+	FileText,
+	Check,
+	CheckCircle2,
+	Trash2,
+	Eye,
+	Download,
+	X,
+	CheckCircle,
+	XCircle
+} from "lucide-react"
 import {PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip} from "recharts"
 import Image from "next/image"
+import {Checkbox} from "@/components/ui/checkbox"
 
 interface PredictionResult {
 	time: string
@@ -47,6 +64,7 @@ interface PredictionResult {
 	visualization?: string
 	videoBlob?: Blob
 	error?: string // Add an optional error field
+	id?: string // Add unique id for selection
 }
 
 export default function ModelPage() {
@@ -62,6 +80,12 @@ export default function ModelPage() {
 	const [predictionResults, setPredictionResults] = useState<PredictionResult[]>([])
 	const [selectedPrediction, setSelectedPrediction] = useState<PredictionResult | null>(null)
 	const [elapsedTime, setElapsedTime] = useState<number>(0) // Replace countdown with elapsedTime
+	const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
+	const [isExporting, setIsExporting] = useState(false)
+	const [showExportDialog, setShowExportDialog] = useState(false)
+	const [showPreviewDialog, setShowPreviewDialog] = useState(false)
+	const [previewImageSrc, setPreviewImageSrc] = useState<string>("")
+	const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
 	const INTERVAL_TIME = 10
 
 	const isCameraActiveRef = useRef(false)
@@ -75,11 +99,11 @@ export default function ModelPage() {
 	const timerIntervalRef = useRef<NodeJS.Timeout | null>(null) // Rename from countdownIntervalRef
 
 	const COLORS = [
-		"#000000",
-		"#333333",
-		"#666666",
-		"#999999",
-		"#CCCCCC",
+		"rgba(0,0,0,0.7)",
+		"rgba(51,51,51,0.8)",
+		"rgba(102,102,102,0.8)",
+		"rgba(153,153,153,0.8)",
+		"rgba(204,204,204,0.8)",
 	]
 
 	/**
@@ -182,6 +206,7 @@ export default function ModelPage() {
 				emotions: data.emotions,
 				visualization: data.visualization ? `data:image/png;base64,${data.visualization}` : undefined,
 				videoBlob: storedBlob,
+				id: `pred_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
 			};
 
 			setPredictionResults((prev) => [...prev, predictionResult]);
@@ -199,6 +224,7 @@ export default function ModelPage() {
 				videoName: fileName,
 				videoBlob: storedBlob,
 				error: errorMessage,
+				id: `pred_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
 			};
 			setPredictionResults((prev) => [...prev, failureResult]);
 		} finally {
@@ -208,6 +234,328 @@ export default function ModelPage() {
 			}
 			setProgress(100);
 		}
+	};
+
+	/**
+	 * toggleRowSelection:
+	 *   Toggle the selection state of a prediction row
+	 */
+	const toggleRowSelection = (id?: string) => {
+		if (!id) return;
+
+		setSelectedRows(prev => {
+			const newSelection = new Set(prev);
+			if (newSelection.has(id)) {
+				newSelection.delete(id);
+			} else {
+				newSelection.add(id);
+			}
+			return newSelection;
+		});
+	};
+
+	/**
+	 * selectAllRows:
+	 *   Select all valid prediction rows
+	 */
+	const selectAllRows = () => {
+		const allIds = predictionResults
+			.filter(result => !result.error) // Only select valid results
+			.map(result => result.id)
+			.filter(Boolean) as string[];
+
+		setSelectedRows(new Set(allIds));
+	};
+
+	/**
+	 * clearSelection:
+	 *   Clear all selected rows
+	 */
+	const clearSelection = () => {
+		setSelectedRows(new Set());
+	};
+
+	/**
+	 * deleteSelected:
+	 *   Remove selected rows from prediction results
+	 */
+	const deleteSelected = () => {
+		setPredictionResults(prev =>
+			prev.filter(result => !result.id || !selectedRows.has(result.id))
+		);
+		clearSelection();
+	};
+
+	/**
+	 * downloadPdf:
+	 *   Download the generated PDF file
+	 */
+	const downloadPdf = () => {
+		if (!pdfBlob) return;
+
+		const url = URL.createObjectURL(pdfBlob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = `deception_analysis_${new Date().toISOString().slice(0, 10)}.pdf`;
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		URL.revokeObjectURL(url);
+
+		setShowPreviewDialog(false);
+		setShowExportDialog(true);
+	};
+
+	/**
+	 * createReportContent:
+	 *   Create the HTML content for the report
+	 */
+	const createReportContent = (selectedResults: PredictionResult[]) => {
+		// Create a temporary container for generating the report content
+		const reportContainer = document.createElement('div');
+		reportContainer.style.padding = '30px';
+		reportContainer.style.width = '800px'; // Fixed width for consistent rendering
+		reportContainer.style.fontFamily = 'Arial, sans-serif';
+		reportContainer.style.backgroundColor = 'white';
+
+		// Add modern header with title
+		reportContainer.innerHTML = `
+			<div style="margin-bottom: 30px;">
+				<h1 style="margin: 0; color: #000000; font-size: 32px; font-weight: 600; letter-spacing: -0.5px;">Deception Detection Report</h1>
+				<p style="margin: 8px 0 0; color: #555555; font-size: 15px;">${new Date().toLocaleString()}</p>
+				<div style="width: 60px; height: 4px; background-color: #000000; margin-top: 15px;"></div>
+			</div>
+		`;
+
+		// Add summary section with modern styling
+		const truthCount = selectedResults.filter(r => r.result === "Truthful").length;
+		const deceptiveCount = selectedResults.filter(r => r.result === "Deceptive").length;
+		const errorCount = selectedResults.filter(r => r.result === "Prediction Failed").length;
+
+		reportContainer.innerHTML += `
+			<div style="margin-bottom: 40px; background-color: #f8f8f8; padding: 25px; border-radius: 8px;">
+				<h2 style="margin-top: 0; margin-bottom: 15px; font-size: 20px; font-weight: 500; color: #000000;">Analysis Summary</h2>
+				
+				<div style="display: flex; gap: 15px; margin-bottom: 20px;">
+					<div style="flex: 1; padding: 15px; background-color: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+						<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 5px;">Total Analyzed</div>
+						<div style="font-size: 28px; font-weight: 600; color: #000;">${selectedResults.length}</div>
+					</div>
+					<div style="flex: 1; padding: 15px; background-color: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+						<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 2px;">Truthful</div>
+						<div style="font-size: 28px; font-weight: 600; color: #000;">${truthCount}</div>
+					</div>
+					<div style="flex: 1; padding: 15px; background-color: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+						<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 2px;">Deceptive</div>
+						<div style="font-size: 28px; font-weight: 600; color: #000;">${deceptiveCount}</div>
+					</div>
+				</div>
+			</div>
+		`;
+
+		// Add results list heading
+		reportContainer.innerHTML += `
+			<h2 style="margin: 0 0 20px 0; font-size: 22px; font-weight: 500; color: #000;">Analysis Results</h2>
+		`;
+
+		// Loop through each selected result with modern styling
+		for (const result of selectedResults) {
+			const card = document.createElement('div');
+			card.style.marginBottom = '40px';
+			card.style.backgroundColor = 'white';
+			card.style.borderRadius = '8px';
+			card.style.overflow = 'hidden';
+			card.style.boxShadow = '0 1px 4px rgba(0,0,0,0.1)';
+
+			if (result.error) {
+				card.innerHTML = `
+      <div style="padding:25px">
+        <div style="display:flex;align-items:center;margin-bottom:15px">
+          <div style="background-color:#f5f5f5;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:15px">
+            <div style="width:18px;height:18px;background-color:#999;border-radius:50%"></div>
+          </div>
+          <div>
+            <h3 style="margin:0 0 4px 0;font-size:18px;font-weight:500;color:#666">
+              ${result.videoName}
+            </h3>
+            <p style="margin:0;color:#888;font-size:14px">
+              ${result.time}
+            </p>
+          </div>
+        </div>
+        <div style="padding:20px;background-color:#f9f9f9;border-radius:6px;color:#666;font-size:15px">
+          Analysis failed: ${result.error}
+        </div>
+      </div>
+    `;
+			} else {
+				const color = result.result === 'Truthful' ? '#05402C' : '#800000';
+				const confidence = parseInt(result.confidence || '50', 10);
+				const viz = result.visualization
+					? `<div style="margin-bottom:20px">
+           <img src="${result.visualization}" 
+                style="width:100%;max-height:250px;object-fit:contain;filter:grayscale(100%);border-radius:4px" />
+         </div>`
+					: '';
+
+				// Build emotion rows all at once
+				const rows = result.emotions?.map(e => `
+      <tr>
+        <td style="padding:10px;border-bottom:1px solid #eee;color:#555">
+          ${e.name}
+        </td>
+        <td style="padding:10px;text-align:right;border-bottom:1px solid #eee">
+          <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px">
+            <div style="width:100px;background-color:#eee;height:6px;border-radius:3px">
+              <div style="height:6px;border-radius:6px;background-color:#555;width:${e.value}%"></div>
+            </div>
+            <span style="font-size:14px;color:#555">
+              ${Math.round(e.value)}%
+            </span>
+          </div>
+        </td>
+      </tr>
+    `).join('') ?? '';
+
+				card.innerHTML = `
+      <div style="padding:25px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <div>
+            <h3 style="font-size:18px;font-weight:500;color:#333;margin:0">
+              ${result.videoName}
+            </h3>
+            <p style="color:#888;font-size:14px;margin:2px 0 0">
+              ${result.time}
+            </p>
+          </div>
+        </div>
+
+        <div style="
+          display:flex;
+          justify-content:space-between;
+          align-items:center;
+          background-color:#ECECEC;
+          margin:20px 0;
+          border-radius:8px;
+          padding:20px;
+        ">
+          <p style="font-size:24px;font-weight:600;color:${color}">
+            ${result.result}
+          </p>
+          <p style="font-size:14px;color:#333">
+            Confidence: ${confidence}%
+          </p>
+        </div>
+
+        ${viz}
+
+        ${rows
+					? `<table style="width:100%;border-collapse:collapse;font-size:14px">
+               <thead>
+                 <tr style="background-color:#f5f5f5">
+                   <th style="padding:10px;text-align:left;border-bottom:1px solid #eee;color:#333;font-weight:500">
+                     Emotion
+                   </th>
+                   <th style="padding:10px;text-align:right;border-bottom:1px solid #eee;color:#333;font-weight:500">
+                     Intensity
+                   </th>
+                 </tr>
+               </thead>
+               <tbody>${rows}</tbody>
+             </table>`
+					: ''
+				}
+      </div>
+    `;
+			}
+
+			reportContainer.appendChild(card);
+		}
+
+
+		return reportContainer;
+	};
+
+	/**
+	 * generatePreview:
+	 *   Generate a preview image of the PDF and show the preview dialog
+	 */
+	const generatePreview = async () => {
+		if (selectedRows.size === 0) return;
+
+		try {
+			setIsExporting(true);
+
+			// Filter and sort selected results
+			const selectedResults = predictionResults
+				.filter(result => result.id && selectedRows.has(result.id))
+				.sort((a, b) => a.time.localeCompare(b.time));
+
+			// Create report content
+			const reportContainer = createReportContent(selectedResults);
+
+			// Temporarily add container to document for rendering
+			reportContainer.style.position = 'absolute';
+			reportContainer.style.left = '-9999px';
+			document.body.appendChild(reportContainer);
+
+			try {
+				// Dynamically import html2canvas
+				const html2canvas = await import('html2canvas');
+
+				// Generate preview image
+				const canvas = await html2canvas.default(reportContainer, {
+					scale: 2, // Higher quality
+					useCORS: true,
+					logging: false,
+				});
+
+				// Convert to image for preview
+				const previewImage = canvas.toDataURL('image/png');
+				setPreviewImageSrc(previewImage);
+
+				// Generate PDF but don't save yet
+				const jsPDF = await import('jspdf');
+				const doc = new jsPDF.default({
+					orientation: 'portrait',
+					unit: 'mm',
+					format: 'a4'
+				});
+
+				const imgWidth = 210; // A4 width in mm
+				const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+				doc.addImage(previewImage, 'PNG', 0, 0, imgWidth, imgHeight);
+
+				// Store PDF as blob for later download
+				const pdfOutput = doc.output('blob');
+				setPdfBlob(pdfOutput);
+
+				// Show preview dialog
+				setShowPreviewDialog(true);
+
+			} catch (err) {
+				console.error('Error generating preview:', err);
+				handleError('Failed to generate report preview', err);
+			}
+
+			// Clean up
+			document.body.removeChild(reportContainer);
+
+		} catch (err) {
+			handleError('Failed to generate report preview', err);
+		} finally {
+			setIsExporting(false);
+		}
+	};
+
+	/**
+	 * exportToPdf:
+	 *   Just calls generate preview now - actual export happens in downloadPdf
+	 */
+	const exportToPdf = async () => {
+		if (selectedRows.size === 0) return;
+		await generatePreview();
 	};
 
 	/**
@@ -495,6 +843,7 @@ export default function ModelPage() {
 					} else {
 						console.warn(`Timer interval: Recorder not found or not recording (state: ${currentRecorder?.state})`);
 					}
+					return nextTime;
 				}
 				return nextTime;
 			});
@@ -700,7 +1049,7 @@ export default function ModelPage() {
 										Emotions playing hide and seek
 									</p>
 									<p className="text-xs text-muted-foreground max-w-[200px]">
-										Our emotion detector hit a snag. Let's try another video clip!
+										Our emotion detector hit a snag. Let&apos;s try another video clip!
 									</p>
 								</div>
 							) : selectedPrediction?.emotions && selectedPrediction.emotions.length > 0 ? (
@@ -752,10 +1101,58 @@ export default function ModelPage() {
 
 				<Card className="p-6 space-y-6 md:col-span-3">
 					<div className="flex flex-col h-[600px]">
+						<div className="flex items-center justify-between mb-3">
+							<div className="flex items-center gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									className="flex items-center gap-1"
+									onClick={selectAllRows}
+									disabled={predictionResults.length === 0}
+								>
+									<CheckCircle2 className="h-3 w-3"/>
+									<span className="text-xs">All</span>
+								</Button>
+								{selectedRows.size > 0 && (
+									<>
+										<Button
+											variant="outline"
+											size="sm"
+											className="flex items-center gap-1"
+											onClick={clearSelection}
+										>
+											<Check className="h-3 w-3"/>
+											<span className="text-xs">{selectedRows.size} selected</span>
+										</Button>
+										<Button
+											variant="outline"
+											size="sm"
+											className="flex items-center gap-1 text-destructive hover:text-destructive"
+											onClick={deleteSelected}
+										>
+											<Trash2 className="h-3 w-3"/>
+											<span className="text-xs">Delete</span>
+										</Button>
+									</>
+								)}
+							</div>
+							<div className="flex items-center gap-2">
+								<Button
+									variant="secondary"
+									size="sm"
+									className="flex items-center gap-1"
+									onClick={exportToPdf}
+									disabled={selectedRows.size === 0 || isExporting}
+								>
+									<span className="text-xs">{isExporting ? 'Generating...' : 'Preview Report'}</span>
+								</Button>
+							</div>
+						</div>
 						<div className="flex-1 overflow-auto">
 							<Table>
 								<TableHeader>
 									<TableRow>
+										<TableHead className="w-[30px]"></TableHead>
 										<TableHead>Time</TableHead>
 										<TableHead>Video Name</TableHead>
 										<TableHead>Result</TableHead>
@@ -767,30 +1164,45 @@ export default function ModelPage() {
 										predictionResults.map((row, i) => (
 											<TableRow
 												key={i}
-												onClick={() => handlePredictionSelect(row)}
-												className={`cursor-pointer hover:bg-muted ${selectedPrediction === row ? 'bg-muted' : ''}`}
+												className={`hover:bg-muted ${selectedPrediction === row ? 'bg-muted' : ''}`}
 											>
-												<TableCell>{row.time}</TableCell>
-												<TableCell>{row.videoName}</TableCell>
-												<TableCell>{row.result}</TableCell>
-												<TableCell>{row.confidence}</TableCell>
+												<TableCell className="pl-4">
+													<Checkbox
+														checked={row.id ? selectedRows.has(row.id) : false}
+														onCheckedChange={() => toggleRowSelection(row.id)}
+														onClick={(e) => e.stopPropagation()}
+														disabled={!!row.error} // Disable selection for failed predictions
+													/>
+												</TableCell>
+												<TableCell
+													className="cursor-pointer"
+													onClick={() => handlePredictionSelect(row)}
+												>
+													{row.time}
+												</TableCell>
+												<TableCell
+													className="cursor-pointer"
+													onClick={() => handlePredictionSelect(row)}
+												>
+													{row.videoName}
+												</TableCell>
+												<TableCell
+													className="cursor-pointer"
+													onClick={() => handlePredictionSelect(row)}
+												>
+													{row.result}
+												</TableCell>
+												<TableCell
+													className="cursor-pointer"
+													onClick={() => handlePredictionSelect(row)}
+												>
+													{row.confidence}
+												</TableCell>
 											</TableRow>
 										))
 									) : (
 										<TableRow>
-											<TableCell colSpan={4} className="py-12">
-												<div className="flex items-center justify-center py-12">
-													<div className="flex items-center gap-4 px-4">
-														<Database className="h-10 w-10 text-muted-foreground" strokeWidth={1}/>
-														<div className="text-left">
-															<p className="text-sm font-medium text-foreground">Empty report</p>
-															<p className="text-xs text-muted-foreground max-w-xs mt-1">
-																Try uploading a video or activate the camera to start your first prediction
-															</p>
-														</div>
-													</div>
-												</div>
-											</TableCell>
+											<TableCell colSpan={5} className="py-12"/>
 										</TableRow>
 									)}
 								</TableBody>
@@ -814,7 +1226,7 @@ export default function ModelPage() {
 							) : selectedPrediction?.visualization ? (
 								<>
 									<h3 className="text-lg font-semibold mt-2 mb-4 text-foreground">
-										The truth reveals itself for {selectedPrediction.videoName}
+										{selectedPrediction.videoName}
 									</h3>
 									<div className="border border-border rounded-lg overflow-hidden">
 										<Image
@@ -866,6 +1278,74 @@ export default function ModelPage() {
 					</AlertDialogHeader>
 					<AlertDialogFooter>
 						<AlertDialogAction>Got it!</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
+			{/* Success Export Dialog */}
+			<AlertDialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+				<AlertDialogContent className="max-w-md">
+					<AlertDialogHeader>
+						<div className="flex items-center gap-2">
+							<CheckCircle2 className="h-5 w-5 text-green-500"/>
+							<AlertDialogTitle>Report Generated Successfully</AlertDialogTitle>
+						</div>
+						<AlertDialogDescription className="mt-3">
+							<div className="p-4 bg-muted rounded-md border border-border">
+								<p className="text-sm text-foreground">
+									Your report has been generated and saved to your downloads folder. You can view it in any PDF reader.
+								</p>
+							</div>
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogAction>Close</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
+			{/* Preview Dialog */}
+			<AlertDialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
+				<AlertDialogContent className="max-w-4xl max-h-[90vh] p-0 gap-0">
+					<AlertDialogHeader className="p-4 border-b">
+						<div className="flex items-center justify-between w-full">
+							<div className="flex items-center gap-2">
+								<FileText className="h-5 w-5 text-foreground"/>
+								<AlertDialogTitle>Report Preview</AlertDialogTitle>
+							</div>
+							<Button
+								variant="ghost"
+								size="icon"
+								onClick={() => setShowPreviewDialog(false)}
+							>
+								<X className="h-4 w-4"/>
+							</Button>
+						</div>
+					</AlertDialogHeader>
+
+					<div className="overflow-auto p-4 flex-1 max-h-[70vh]">
+						{previewImageSrc ? (
+							<div className="flex justify-center">
+								<img
+									src={previewImageSrc}
+									alt="Report Preview"
+									className="max-w-full border border-border shadow-sm rounded"
+								/>
+							</div>
+						) : (
+							<div className="flex items-center justify-center py-12">
+								<p className="text-muted-foreground">Generating preview...</p>
+							</div>
+						)}
+					</div>
+
+					<AlertDialogFooter className="p-4 border-t">
+						<Button variant="outline" onClick={() => setShowPreviewDialog(false)}>
+							Cancel
+						</Button>
+						<Button className="flex items-center gap-1" onClick={downloadPdf}>
+							Download PDF
+						</Button>
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
