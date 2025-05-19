@@ -61,6 +61,16 @@ export default function Navigation() {
 								</NavigationMenuLink>
 							</Link>
 						</NavigationMenuItem>
+						<NavigationMenuItem>
+							<Link href="/manual" legacyBehavior passHref>
+								<NavigationMenuLink className={cn(
+									navigationMenuTriggerStyle(),
+									pathname === "/manual" && "bg-accent"
+								)}>
+									User Manual
+								</NavigationMenuLink>
+							</Link>
+						</NavigationMenuItem>
 					</NavigationMenuList>
 				</NavigationMenu>
 				<div className="ml-auto">

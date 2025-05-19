@@ -503,7 +503,7 @@ export default function ModelPage() {
 				// Dynamically import html2canvas
 				const html2canvas = await import('html2canvas');
 
-				// Generate preview image
+				// Generate preview image for the preview dialog
 				const canvas = await html2canvas.default(reportContainer, {
 					scale: 2, // Higher quality
 					useCORS: true,
@@ -514,7 +514,7 @@ export default function ModelPage() {
 				const previewImage = canvas.toDataURL('image/png');
 				setPreviewImageSrc(previewImage);
 
-				// Generate PDF but don't save yet
+				// Generate PDF with proper pagination
 				const jsPDF = await import('jspdf');
 				const doc = new jsPDF.default({
 					orientation: 'portrait',
@@ -523,9 +523,26 @@ export default function ModelPage() {
 				});
 
 				const imgWidth = 210; // A4 width in mm
+				const pageHeight = 297; // A4 height in mm
 				const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-				doc.addImage(previewImage, 'PNG', 0, 0, imgWidth, imgHeight);
+				
+				// Handle multi-page content
+				let heightLeft = imgHeight;
+				let position = 0;
+				let pageCount = 0;
+				
+				// Add first page
+				doc.addImage(previewImage, 'PNG', 0, position, imgWidth, imgHeight);
+				heightLeft -= pageHeight;
+				
+				// Add additional pages if content doesn't fit on one page
+				while (heightLeft > 0) {
+					pageCount++;
+					position = -pageHeight * pageCount;
+					doc.addPage();
+					doc.addImage(previewImage, 'PNG', 0, position, imgWidth, imgHeight);
+					heightLeft -= pageHeight;
+				}
 
 				// Store PDF as blob for later download
 				const pdfOutput = doc.output('blob');
@@ -1266,7 +1283,7 @@ export default function ModelPage() {
 					<AlertDialogHeader>
 						<div className="flex items-center gap-2">
 							<AlertCircle className="h-5 w-5 text-foreground"/>
-							<AlertDialogTitle>Oops! A Tiny Hiccup</AlertDialogTitle>
+							<AlertDialogTitle>Prediction Interrupted</AlertDialogTitle>
 						</div>
 						<AlertDialogDescription className="mt-3">
 							<div className="p-3 bg-muted rounded-md border border-border">
