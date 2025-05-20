@@ -210,13 +210,15 @@ export default function ModelPage() {
 			};
 
 			setPredictionResults((prev) => [...prev, predictionResult]);
-			if (!selectedPrediction) {
+			// if (!selectedPrediction) {
 				setSelectedPrediction(predictionResult);
-			}
+			// }
 		} catch (err) {
-			const errorMessage = err instanceof Error ? err.message : "An unknown error occurred during prediction.";
-			handleError(`Prediction failed for ${fileName}. Recording saved.`, err);
-
+			const errorMessage = err instanceof Error
+			    ? err.message.replace(/(?:Error: )?(?:Server responded with (?:\d+|[^:]+): )?/, "").trim()
+			    : "An unknown error.";
+			handleError(`"${errorMessage}" \n\n- By the model`);
+			console.log(err);
 			const failureResult: PredictionResult = {
 				time: new Date().toLocaleTimeString(),
 				result: "Prediction Failed",
@@ -320,12 +322,12 @@ export default function ModelPage() {
 
 		// Add modern header with title
 		reportContainer.innerHTML = `
-			<div style="margin-bottom: 30px;">
-				<h1 style="margin: 0; color: #000000; font-size: 32px; font-weight: 600; letter-spacing: -0.5px;">Deception Detection Report</h1>
-				<p style="margin: 8px 0 0; color: #555555; font-size: 15px;">${new Date().toLocaleString()}</p>
-				<div style="width: 60px; height: 4px; background-color: #000000; margin-top: 15px;"></div>
-			</div>
-		`;
+		<div style="margin-bottom: 30px;">
+			<h1 style="margin: 0; color: #000000; font-size: 32px; font-weight: 600; letter-spacing: -0.5px;">Deception Detection Report</h1>
+			<p style="margin: 8px 0 0; color: #555555; font-size: 15px;">${new Date().toLocaleString()}</p>
+			<div style="width: 60px; height: 4px; background-color: #000000; margin-top: 15px;"></div>
+		</div>
+	`;
 
 		// Add summary section with modern styling
 		const truthCount = selectedResults.filter(r => r.result === "Truthful").length;
@@ -333,29 +335,28 @@ export default function ModelPage() {
 		const errorCount = selectedResults.filter(r => r.result === "Prediction Failed").length;
 
 		reportContainer.innerHTML += `
-			<div style="margin-bottom: 40px; background-color: #f8f8f8; padding: 25px; border-radius: 8px;">
-				<h2 style="margin-top: 0; margin-bottom: 15px; font-size: 20px; font-weight: 500; color: #000000;">Analysis Summary</h2>
-				
-				<div style="display: flex; gap: 15px; margin-bottom: 20px;">
-					<div style="flex: 1; padding: 15px; background-color: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
-						<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 5px;">Total Analyzed</div>
-						<div style="font-size: 28px; font-weight: 600; color: #000;">${selectedResults.length}</div>
-					</div>
-					<div style="flex: 1; padding: 15px; background-color: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
-						<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 2px;">Truthful</div>
-						<div style="font-size: 28px; font-weight: 600; color: #000;">${truthCount}</div>
-					</div>
-					<div style="flex: 1; padding: 15px; background-color: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
-						<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 2px;">Deceptive</div>
-						<div style="font-size: 28px; font-weight: 600; color: #000;">${deceptiveCount}</div>
-					</div>
+		<div style="margin-bottom: 40px; background-color: #f8f8f8; padding: 25px; border-radius: 8px;">
+			<h2 style="margin-top: 0; margin-bottom: 15px; font-size: 20px; font-weight: 500; color: #000000;">Analysis Summary</h2>
+			<div style="display: flex; gap: 15px; margin-bottom: 20px;">
+				<div style="flex: 1; padding: 15px; background-color: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+					<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 5px;">Total Analyzed</div>
+					<div style="font-size: 28px; font-weight: 600; color: #000;">${selectedResults.length}</div>
+				</div>
+				<div style="flex: 1; padding: 15px; background-color: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+					<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 2px;">Truthful</div>
+					<div style="font-size: 28px; font-weight: 600; color: #000;">${truthCount}</div>
+				</div>
+				<div style="flex: 1; padding: 15px; background-color: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+					<div style="font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 2px;">Deceptive</div>
+					<div style="font-size: 28px; font-weight: 600; color: #000;">${deceptiveCount}</div>
 				</div>
 			</div>
+		</div>
 		`;
 
 		// Add results list heading
 		reportContainer.innerHTML += `
-			<h2 style="margin: 0 0 20px 0; font-size: 22px; font-weight: 500; color: #000;">Analysis Results</h2>
+		<h2 style="margin: 0 0 20px 0; font-size: 22px; font-weight: 500; color: #000;">Analysis Results</h2>
 		`;
 
 		// Loop through each selected result with modern styling
@@ -369,104 +370,104 @@ export default function ModelPage() {
 
 			if (result.error) {
 				card.innerHTML = `
-      <div style="padding:25px">
-        <div style="display:flex;align-items:center;margin-bottom:15px">
-          <div style="background-color:#f5f5f5;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:15px">
-            <div style="width:18px;height:18px;background-color:#999;border-radius:50%"></div>
-          </div>
-          <div>
-            <h3 style="margin:0 0 4px 0;font-size:18px;font-weight:500;color:#666">
-              ${result.videoName}
-            </h3>
-            <p style="margin:0;color:#888;font-size:14px">
-              ${result.time}
-            </p>
-          </div>
-        </div>
-        <div style="padding:20px;background-color:#f9f9f9;border-radius:6px;color:#666;font-size:15px">
-          Analysis failed: ${result.error}
-        </div>
-      </div>
-    `;
+					<div style="padding:25px">
+						<div style="display:flex;align-items:center;margin-bottom:15px">
+							<div style="background-color:#f5f5f5;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-right:15px">
+								<div style="width:18px;height:18px;background-color:#999;border-radius:50%"></div>
+							</div>
+							<div>
+								<h3 style="margin:0 0 4px 0;font-size:18px;font-weight:500;color:#666">
+									${result.videoName}
+								</h3>
+								<p style="margin:0;color:#888;font-size:14px">
+									${result.time}
+								</p>
+							</div>
+						</div>
+						<div style="padding:20px;background-color:#f9f9f9;border-radius:6px;color:#666;font-size:15px">
+							Analysis failed: ${result.error}
+						</div>
+					</div>
+				`;
 			} else {
 				const color = result.result === 'Truthful' ? '#05402C' : '#800000';
 				const confidence = parseInt(result.confidence || '50', 10);
 				const viz = result.visualization
 					? `<div style="margin-bottom:20px">
-           <img src="${result.visualization}" 
-                style="width:100%;max-height:250px;object-fit:contain;filter:grayscale(100%);border-radius:4px" />
-         </div>`
+							<img src="${result.visualization}" 
+								style="width:100%;max-height:250px;object-fit:contain;filter:grayscale(100%);border-radius:4px" />
+						</div>`
 					: '';
 
 				// Build emotion rows all at once
 				const rows = result.emotions?.map(e => `
-      <tr>
-        <td style="padding:10px;border-bottom:1px solid #eee;color:#555">
-          ${e.name}
-        </td>
-        <td style="padding:10px;text-align:right;border-bottom:1px solid #eee">
-          <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px">
-            <div style="width:100px;background-color:#eee;height:6px;border-radius:3px">
-              <div style="height:6px;border-radius:6px;background-color:#555;width:${e.value}%"></div>
-            </div>
-            <span style="font-size:14px;color:#555">
-              ${Math.round(e.value)}%
-            </span>
-          </div>
-        </td>
-      </tr>
-    `).join('') ?? '';
+					<tr>
+						<td style="padding:10px;border-bottom:1px solid #eee;color:#555">
+							${e.name}
+						</td>
+						<td style="padding:10px;text-align:right;border-bottom:1px solid #eee">
+							<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px">
+								<div style="width:100px;background-color:#eee;height:6px;border-radius:3px">
+									<div style="height:6px;border-radius:6px;background-color:#555;width:${e.value}%"></div>
+								</div>
+								<span style="font-size:14px;color:#555">
+									${Math.round(e.value)}%
+								</span>
+							</div>
+						</td>
+					</tr>
+				`).join('') ?? '';
 
 				card.innerHTML = `
-      <div style="padding:25px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-          <div>
-            <h3 style="font-size:18px;font-weight:500;color:#333;margin:0">
-              ${result.videoName}
-            </h3>
-            <p style="color:#888;font-size:14px;margin:2px 0 0">
-              ${result.time}
-            </p>
-          </div>
-        </div>
+					<div style="padding:25px">
+						<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+							<div>
+								<h3 style="font-size:18px;font-weight:500;color:#333;margin:0">
+									${result.videoName}
+								</h3>
+								<p style="color:#888;font-size:14px;margin:2px 0 0">
+									${result.time}
+								</p>
+							</div>
+						</div>
 
-        <div style="
-          display:flex;
-          justify-content:space-between;
-          align-items:center;
-          background-color:#ECECEC;
-          margin:20px 0;
-          border-radius:8px;
-          padding:20px;
-        ">
-          <p style="font-size:24px;font-weight:600;color:${color}">
-            ${result.result}
-          </p>
-          <p style="font-size:14px;color:#333">
-            Confidence: ${confidence}%
-          </p>
-        </div>
+						<div style="
+							display:flex;
+							justify-content:space-between;
+							align-items:center;
+							background-color:#ECECEC;
+							margin:20px 0;
+							border-radius:8px;
+							padding:20px;
+						">
+							<p style="font-size:24px;font-weight:600;color:${color}">
+								${result.result}
+							</p>
+							<p style="font-size:14px;color:#333">
+								Confidence: ${confidence}%
+							</p>
+						</div>
 
-        ${viz}
+						${viz}
 
-        ${rows
-					? `<table style="width:100%;border-collapse:collapse;font-size:14px">
-               <thead>
-                 <tr style="background-color:#f5f5f5">
-                   <th style="padding:10px;text-align:left;border-bottom:1px solid #eee;color:#333;font-weight:500">
-                     Emotion
-                   </th>
-                   <th style="padding:10px;text-align:right;border-bottom:1px solid #eee;color:#333;font-weight:500">
-                     Intensity
-                   </th>
-                 </tr>
-               </thead>
-               <tbody>${rows}</tbody>
-             </table>`
-					: ''
-				}
-      </div>
-    `;
+						${rows
+								? `<table style="width:100%;border-collapse:collapse;font-size:14px">
+							<thead>
+								<tr style="background-color:#f5f5f5">
+									<th style="padding:10px;text-align:left;border-bottom:1px solid #eee;color:#333;font-weight:500">
+										Emotion
+									</th>
+									<th style="padding:10px;text-align:right;border-bottom:1px solid #eee;color:#333;font-weight:500">
+										Intensity
+									</th>
+								</tr>
+							</thead>
+							<tbody>${rows}</tbody>
+						</table>`
+								: ''
+							}
+					</div>
+				`;
 			}
 
 			reportContainer.appendChild(card);
@@ -581,29 +582,44 @@ export default function ModelPage() {
 	 *   and invokes `sendVideoForPrediction`.
 	 */
 	const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-		const file = event.target.files?.[0]
-		if (!file) return
+		const file = event.target.files?.[0];
+		if (!file) return;
 
-		if (!file.type.startsWith("video/")) {
-			handleError("Please select a valid video file.");
-			return
+		// More comprehensive format check
+		const isVideoFile =
+			file.type.startsWith("video/") ||
+			/\.(mp4|webm|ogg|mov|avi|wmv|flv|mkv|3gp|wmv3)$/i.test(file.name);
+
+		// Check specifically for WMV3 to show a direct warning
+		const isWMV3 = /\.wmv3$/i.test(file.name);
+		
+		if (isWMV3) {
+			handleError(
+				"WMV3 format detected. While we'll attempt to process this file, most browsers cannot play WMV3 videos. For best results, please convert your video to MP4 format before uploading."
+			);
+			// Continue with the upload despite the warning
+		} else if (!isVideoFile) {
+			handleError(
+				"Please select a valid video file. Supported formats include MP4, WebM, MOV, AVI, WMV, WMV3, FLV, MKV, and more."
+			);
+			return;
 		}
 
 		if (file.size > 100 * 1024 * 1024) {
 			handleError("File is too large. Please select a video under 100MB.");
-			return
+			return;
 		}
 
 		if (videoSrc && videoSrc.startsWith("blob:")) {
-			URL.revokeObjectURL(videoSrc)
-			console.log("Revoked previous videoSrc URL (file select):", videoSrc)
+			URL.revokeObjectURL(videoSrc);
+			console.log("Revoked previous videoSrc URL (file select):", videoSrc);
 		}
 
-		const videoUrl = URL.createObjectURL(file)
-		setVideoSrc(videoUrl)
+		const videoUrl = URL.createObjectURL(file);
+		setVideoSrc(videoUrl);
 
-		sendVideoForPrediction(file)
-	}
+		sendVideoForPrediction(file);
+	};
 
 	/**
 	 * handlePredictionSelect:
@@ -612,51 +628,108 @@ export default function ModelPage() {
 	 *   Manages object URL creation and revocation for the video preview.
 	 */
 	const handlePredictionSelect = async (prediction: PredictionResult) => {
-		setSelectedPrediction(prediction)
+		setSelectedPrediction(prediction);
 
 		if (videoSrc && videoSrc.startsWith("blob:")) {
-			URL.revokeObjectURL(videoSrc)
-			console.log("Revoked previous videoSrc URL:", videoSrc)
+			URL.revokeObjectURL(videoSrc);
+			console.log("Revoked previous videoSrc URL:", videoSrc);
 		}
 
 		if (prediction.videoBlob) {
 			try {
-				console.log("Creating object URL from blob:",
+				console.log(
+					"Creating object URL from blob:",
 					prediction.videoBlob.size,
 					"bytes, type:",
-					prediction.videoBlob.type);
+					prediction.videoBlob.type
+				);
+
+				// Check if this is likely a WMV3 file
+				const isLikelyWMV3 = prediction.videoName.toLowerCase().endsWith('.wmv3');
+				
+				// Detect appropriate MIME type based on original file name
+				let mimeType = "video/webm"; // default
+				const fileName = prediction.videoName.toLowerCase();
+
+				if (fileName.endsWith(".mp4")) mimeType = "video/mp4";
+				else if (fileName.endsWith(".webm")) mimeType = "video/webm";
+				else if (fileName.endsWith(".ogg") || fileName.endsWith(".ogv"))
+					mimeType = "video/ogg";
+				else if (fileName.endsWith(".mov")) mimeType = "video/quicktime";
+				else if (fileName.endsWith(".wmv")) mimeType = "video/x-ms-wmv";
+				else if (fileName.endsWith(".wmv3")) mimeType = "video/x-ms-wmv"; // Map WMV3 to MS-WMV MIME type
+				else if (fileName.endsWith(".avi")) mimeType = "video/x-msvideo";
+				else if (fileName.endsWith(".flv")) mimeType = "video/x-flv";
+				else if (fileName.endsWith(".mkv")) mimeType = "video/x-matroska";
+				else if (fileName.endsWith(".3gp")) mimeType = "video/3gpp";
 
 				const blobWithProperType = new Blob(
 					[await prediction.videoBlob.arrayBuffer()],
-					{type: 'video/webm'}
+					{ type: mimeType }
 				);
 
 				const newVideoUrl = URL.createObjectURL(blobWithProperType);
-				console.log("Created new videoSrc URL:", newVideoUrl);
+				console.log(
+					`Created new videoSrc URL with MIME type ${mimeType}:`,
+					newVideoUrl
+				);
 
 				setInputMethod("upload");
 
+				// For WMV3 files, show a warning before even trying to play
+				if (isLikelyWMV3) {
+					handleError(
+						"WMV3 videos cannot be played in most browsers. While the prediction analysis will work, the video preview may not be available. For best results, convert your videos to MP4 format."
+					);
+				}
+
+				// Set video source and add format support info
 				setTimeout(() => {
 					setVideoSrc(newVideoUrl);
 
 					setTimeout(() => {
-						const videoEl = document.getElementById("video-preview") as HTMLVideoElement;
+						const videoEl = document.getElementById(
+							"video-preview"
+						) as HTMLVideoElement;
 						if (videoEl) {
+							// Add the video format warning message
+							videoEl.addEventListener(
+								"error",
+								(e) => {
+									console.error("Video playback error:", e);
+									// Show format not supported error
+									const errorMsg = isLikelyWMV3 
+										? `This WMV3 video format cannot be played in browsers. The prediction analysis has worked, but video preview is not available. Please convert to MP4 for full functionality.`
+										: `This video format (${mimeType}) may not be supported in your browser. Try converting it to MP4 format or use a different browser like Chrome.`;
+									
+									handleError(errorMsg);
+								},
+								{ once: true }
+							);
+
 							videoEl.load();
-							videoEl.play().catch(e => console.log("Couldn't autoplay:", e));
+							videoEl.play().catch((e) => {
+								console.log("Couldn't autoplay:", e);
+								if (e.name === "NotSupportedError") {
+									const errorMsg = isLikelyWMV3 
+										? `WMV3 format is not supported in browsers. Your prediction results are still valid, but the video cannot be played.`
+										: `This video format (${mimeType}) is not supported in your browser. Try converting it to MP4 format or use a different browser.`;
+									
+									handleError(errorMsg);
+								}
+							});
 						}
 					}, 100);
 				}, 50);
-
 			} catch (error) {
 				handleError("Could not display the selected video.", error);
-				setVideoSrc("")
-				setInputMethod("upload")
+				setVideoSrc("");
+				setInputMethod("upload");
 			}
 		} else {
-			console.warn("Selected prediction has no video data.")
-			setVideoSrc("")
-			setInputMethod("upload")
+			console.warn("Selected prediction has no video data.");
+			setVideoSrc("");
+			setInputMethod("upload");
 		}
 	}
 
@@ -943,7 +1016,7 @@ export default function ModelPage() {
 			if (videoEl) {
 				videoEl.load();
 				videoEl.play().catch(e => {
-					handleError("Couldn't play the selected video.", e);
+					handleError(`Couldn't play the selected video.\n\n${e}`);
 				});
 			}
 		}
@@ -1283,7 +1356,7 @@ export default function ModelPage() {
 					<AlertDialogHeader>
 						<div className="flex items-center gap-2">
 							<AlertCircle className="h-5 w-5 text-foreground"/>
-							<AlertDialogTitle>Prediction Interrupted</AlertDialogTitle>
+							<AlertDialogTitle>Action Interrupted</AlertDialogTitle>
 						</div>
 						<AlertDialogDescription className="mt-3">
 							<div className="p-3 bg-muted rounded-md border border-border">

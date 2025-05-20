@@ -17,9 +17,9 @@ else:
 
 print('device:', device)
 
-model_scale = 2
-model = RealESRGAN(device, scale=model_scale)
-model.load_weights(f'weights/RealESRGAN_x{model_scale}.pth')
+# model_scale = 2
+# model = RealESRGAN(device, scale=model_scale)
+# model.load_weights(f'weights/RealESRGAN_x{model_scale}.pth')
 
 def initialize_face_mesh():
     """Initialize and return the MediaPipe Face Mesh object."""

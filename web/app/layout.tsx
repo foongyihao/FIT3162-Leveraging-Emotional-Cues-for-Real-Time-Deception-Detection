@@ -41,7 +41,7 @@ export default function RootLayout({
         >
           <div className="flex flex-col h-screen">
             <Navigation />
-            <main className="flex-1 overflow-auto">
+            <main className="flex-1 overflow-auto bg-white dark:bg-[#191919]">
               {children}
             </main>
           </div>
