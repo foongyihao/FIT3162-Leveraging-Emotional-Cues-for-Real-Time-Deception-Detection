@@ -5,7 +5,7 @@ from skimage.metrics import structural_similarity as ssim
 import mediapipe as mp
 from PIL import Image
 import torch
-from RealESRGAN import RealESRGAN
+# from RealESRGAN import RealESRGAN
 from constants import DATA_PATH
 
 # Initialize Real-ESRGAN
