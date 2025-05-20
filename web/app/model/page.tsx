@@ -666,6 +666,11 @@ export default function ModelPage() {
 	 * @param videoName - The name of the video file.
 	 */
 	const playVideoToPreview = async (videoBlob: Blob, videoName: string) => {
+		// Don't play video if the input method is camera
+		if (inputMethod === "camera") {
+			return
+		}
+
 		try {
 			console.log(
 				"Creating object URL from blob:",
@@ -757,7 +762,7 @@ export default function ModelPage() {
 		const videoBlob = prediction.videoBlob;
 
 		if (videoBlob) {
-			await playVideoToPreview(videoBlob, prediction.videoName);
+			inputMethod !== "camera" && await playVideoToPreview(videoBlob, prediction.videoName);
 		} else {
 			console.warn("Selected prediction has no video data.");
 			setVideoSrc("");
