@@ -1,3 +1,6 @@
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 import tensorflow as tf
 import tensorflow.keras.backend as K
 import cv2
@@ -269,8 +272,10 @@ def predict_route():
     if not uploaded_file:
         return jsonify({"error": "No video file provided"}), 400
 
-    temp_path = "/tmp/uploaded_video.mp4"
-    uploaded_file.save(temp_path)
+    # Use a temporary file to save the uploaded video
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+        temp_path = temp_file.name
+        uploaded_file.save(temp_path)
 
     try:
         # Run prediction with visualization
