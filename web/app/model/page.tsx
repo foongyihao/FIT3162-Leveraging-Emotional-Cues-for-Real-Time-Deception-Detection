@@ -211,7 +211,7 @@ export default function ModelPage() {
 
 			setPredictionResults((prev) => [...prev, predictionResult]);
 			// if (!selectedPrediction) {
-				setSelectedPrediction(predictionResult);
+				handlePredictionSelect(predictionResult);
 			// }
 		} catch (err) {
 			const errorMessage = err instanceof Error
@@ -577,6 +577,46 @@ export default function ModelPage() {
 	};
 
 	/**
+	 * checkWMV3Encoding:
+	 *   Checks if a video blob contains WMV3 encoding by examining its header bytes
+	 * @param blob - The video blob to check
+	 * @returns Promise<boolean> indicating if the file is likely WMV3 encoded
+	 */
+	const checkWMV3Encoding = async (blob: Blob): Promise<boolean> => {
+		try {
+			const buffer = await blob.slice(0, 12).arrayBuffer();
+			const header = new Uint8Array(buffer);
+
+			// WMV3 files typically start with these bytes
+			const wmv3Signature = [0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11];
+
+			// Check if the header matches WMV3 signature
+			return wmv3Signature.every((byte, index) => header[index] === byte);
+		} catch (error) {
+			console.warn('Error checking WMV3 encoding:', error);
+			return false;
+		}
+	};
+
+	/**
+	 * checkVideoFormatSupport:
+	 *   Checks if the video format is supported and handles errors consistently.
+	 * @param videoName - The name of the video file.
+	 * @param mimeType - The MIME type of the video.
+	 * @param isLikelyWMV3 - Whether the video is likely in WMV3 format.
+	 */
+	const checkVideoFormatSupport = (videoName: string, mimeType: string, isLikelyWMV3: boolean) => {
+		const errorMsg = isLikelyWMV3
+			? `WMV3 video format cannot be played in browsers. ` +
+			`\n\nThe prediction analysis will still worked, but video preview is not available.` +
+			`\n\nPlease convert to other supported format (e.g. MP4) for full functionality.`
+			: `This video format (${mimeType}) is not supported in your browser.` +
+			`\n\nPlease convert to other supported format (e.g. MP4) for full functionality or use another browser like Chrome`;
+
+		handleError(errorMsg);
+	};
+
+	/**
 	 * handleFileSelect:
 	 *   Validates an uploaded file (type & size), generates a preview URL,
 	 *   and invokes `sendVideoForPrediction`.
@@ -594,9 +634,7 @@ export default function ModelPage() {
 		const isWMV3 = /\.wmv3$/i.test(file.name);
 		
 		if (isWMV3) {
-			handleError(
-				"WMV3 format detected. While we'll attempt to process this file, most browsers cannot play WMV3 videos. For best results, please convert your video to MP4 format before uploading."
-			);
+			checkVideoFormatSupport(file.name, "video/x-ms-wmv", true);
 			// Continue with the upload despite the warning
 		} else if (!isVideoFile) {
 			handleError(
@@ -622,6 +660,88 @@ export default function ModelPage() {
 	};
 
 	/**
+	 * playVideoToPreview:
+	 *   Plays the video from a Blob, setting the source URL and handling format checks.
+	 * @param videoBlob - The Blob containing the video data.
+	 * @param videoName - The name of the video file.
+	 */
+	const playVideoToPreview = async (videoBlob: Blob, videoName: string) => {
+		try {
+			console.log(
+				"Creating object URL from blob:",
+				videoBlob.size,
+				"bytes, type:",
+				videoBlob.type
+			);
+
+			// Check if this is likely a WMV3 file
+			const isWMV3 = await checkWMV3Encoding(videoBlob);
+
+			// Detect appropriate MIME type based on original file name
+			let mimeType = "video/webm"; // default
+			const fileName = videoName.toLowerCase();
+
+			if (fileName.endsWith(".mp4")) mimeType = "video/mp4";
+			else if (fileName.endsWith(".webm")) mimeType = "video/webm";
+			else if (fileName.endsWith(".ogg") || fileName.endsWith(".ogv"))
+				mimeType = "video/ogg";
+			else if (fileName.endsWith(".mov")) mimeType = "video/quicktime";
+			else if (fileName.endsWith(".wmv")) mimeType = "video/x-ms-wmv";
+			else if (fileName.endsWith(".wmv3")) mimeType = "video/x-ms-wmv"; // Map WMV3 to MS-WMV MIME type
+			else if (fileName.endsWith(".avi")) mimeType = "video/x-msvideo";
+			else if (fileName.endsWith(".flv")) mimeType = "video/x-flv";
+			else if (fileName.endsWith(".mkv")) mimeType = "video/x-matroska";
+			else if (fileName.endsWith(".3gp")) mimeType = "video/3gpp";
+
+			const blobWithProperType = new Blob(
+				[await videoBlob.arrayBuffer()],
+				{type: mimeType}
+			);
+
+			const newVideoUrl = URL.createObjectURL(blobWithProperType);
+			console.log(
+				`Created new videoSrc URL with MIME type ${mimeType}:`,
+				newVideoUrl
+			);
+
+			setInputMethod("upload");
+
+			// For WMV3 files, show a warning before even trying to play
+			if (isWMV3) {
+				handleError(
+					"WMV3 videos cannot be played in most browsers. While the prediction analysis will work, the video preview may not be available. For best results, convert your videos to MP4 format."
+				);
+			}
+
+			// Set video source and add format support info
+			setTimeout(() => {
+				setVideoSrc(newVideoUrl);
+
+				setTimeout(() => {
+					const videoEl = document.getElementById("video-preview") as HTMLVideoElement;
+					if (videoEl) {
+						videoEl.addEventListener(
+							"error",
+							() => checkVideoFormatSupport(videoName, mimeType, isWMV3),
+							{once: true}
+						);
+
+						videoEl.load();
+						videoEl.play().catch((e) => {
+							if (e.name === "NotSupportedError") {
+								checkVideoFormatSupport(videoName, mimeType, isWMV3);
+							}
+						});
+					}
+				}, 100);
+			}, 50);
+		} catch (error) {
+			handleError("Could not display the selected video.", error);
+			setVideoSrc("");
+			setInputMethod("upload");
+		}
+	}
+	/**
 	 * handlePredictionSelect:
 	 *   Sets the selected prediction, switches the view to 'upload' mode,
 	 *   and displays the video associated with the selected prediction.
@@ -634,98 +754,10 @@ export default function ModelPage() {
 			URL.revokeObjectURL(videoSrc);
 			console.log("Revoked previous videoSrc URL:", videoSrc);
 		}
+		const videoBlob = prediction.videoBlob;
 
-		if (prediction.videoBlob) {
-			try {
-				console.log(
-					"Creating object URL from blob:",
-					prediction.videoBlob.size,
-					"bytes, type:",
-					prediction.videoBlob.type
-				);
-
-				// Check if this is likely a WMV3 file
-				const isLikelyWMV3 = prediction.videoName.toLowerCase().endsWith('.wmv3');
-				
-				// Detect appropriate MIME type based on original file name
-				let mimeType = "video/webm"; // default
-				const fileName = prediction.videoName.toLowerCase();
-
-				if (fileName.endsWith(".mp4")) mimeType = "video/mp4";
-				else if (fileName.endsWith(".webm")) mimeType = "video/webm";
-				else if (fileName.endsWith(".ogg") || fileName.endsWith(".ogv"))
-					mimeType = "video/ogg";
-				else if (fileName.endsWith(".mov")) mimeType = "video/quicktime";
-				else if (fileName.endsWith(".wmv")) mimeType = "video/x-ms-wmv";
-				else if (fileName.endsWith(".wmv3")) mimeType = "video/x-ms-wmv"; // Map WMV3 to MS-WMV MIME type
-				else if (fileName.endsWith(".avi")) mimeType = "video/x-msvideo";
-				else if (fileName.endsWith(".flv")) mimeType = "video/x-flv";
-				else if (fileName.endsWith(".mkv")) mimeType = "video/x-matroska";
-				else if (fileName.endsWith(".3gp")) mimeType = "video/3gpp";
-
-				const blobWithProperType = new Blob(
-					[await prediction.videoBlob.arrayBuffer()],
-					{ type: mimeType }
-				);
-
-				const newVideoUrl = URL.createObjectURL(blobWithProperType);
-				console.log(
-					`Created new videoSrc URL with MIME type ${mimeType}:`,
-					newVideoUrl
-				);
-
-				setInputMethod("upload");
-
-				// For WMV3 files, show a warning before even trying to play
-				if (isLikelyWMV3) {
-					handleError(
-						"WMV3 videos cannot be played in most browsers. While the prediction analysis will work, the video preview may not be available. For best results, convert your videos to MP4 format."
-					);
-				}
-
-				// Set video source and add format support info
-				setTimeout(() => {
-					setVideoSrc(newVideoUrl);
-
-					setTimeout(() => {
-						const videoEl = document.getElementById(
-							"video-preview"
-						) as HTMLVideoElement;
-						if (videoEl) {
-							// Add the video format warning message
-							videoEl.addEventListener(
-								"error",
-								(e) => {
-									console.error("Video playback error:", e);
-									// Show format not supported error
-									const errorMsg = isLikelyWMV3 
-										? `This WMV3 video format cannot be played in browsers. The prediction analysis has worked, but video preview is not available. Please convert to MP4 for full functionality.`
-										: `This video format (${mimeType}) may not be supported in your browser. Try converting it to MP4 format or use a different browser like Chrome.`;
-									
-									handleError(errorMsg);
-								},
-								{ once: true }
-							);
-
-							videoEl.load();
-							videoEl.play().catch((e) => {
-								console.log("Couldn't autoplay:", e);
-								if (e.name === "NotSupportedError") {
-									const errorMsg = isLikelyWMV3 
-										? `WMV3 format is not supported in browsers. Your prediction results are still valid, but the video cannot be played.`
-										: `This video format (${mimeType}) is not supported in your browser. Try converting it to MP4 format or use a different browser.`;
-									
-									handleError(errorMsg);
-								}
-							});
-						}
-					}, 100);
-				}, 50);
-			} catch (error) {
-				handleError("Could not display the selected video.", error);
-				setVideoSrc("");
-				setInputMethod("upload");
-			}
+		if (videoBlob) {
+			await playVideoToPreview(videoBlob, prediction.videoName);
 		} else {
 			console.warn("Selected prediction has no video data.");
 			setVideoSrc("");
@@ -1004,23 +1036,6 @@ export default function ModelPage() {
 			}
 		}
 	}, [inputMethod])
-
-	/**
-	 * useEffect hook to handle changes in the video source URL when in 'upload' mode.
-	 * Loads and attempts to play the new video when `videoSrc` changes.
-	 */
-	useEffect(() => {
-		if (videoSrc && inputMethod === "upload") {
-			console.log("Video source changed, loading:", videoSrc);
-			const videoEl = document.getElementById("video-preview") as HTMLVideoElement;
-			if (videoEl) {
-				videoEl.load();
-				videoEl.play().catch(e => {
-					handleError(`Couldn't play the selected video.\n\n${e}`);
-				});
-			}
-		}
-	}, [videoSrc, inputMethod]);
 
 	/**
 	 * useEffect hook to start the MediaRecorder when it's created/set in state
