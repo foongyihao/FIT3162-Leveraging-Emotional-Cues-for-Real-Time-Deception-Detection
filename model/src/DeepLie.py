@@ -39,8 +39,8 @@ main_model_path = NOTEBOOKS_PATH + 'deeplie/content/deep-lie/project/gru_model/g
 main_model = tf.keras.models.load_model(main_model_path)
 
 # Load mean and std for normalization
-mean_X = np.load(NOTEBOOKS_PATH + 'deeplie/content/fer2013/mean_X.npy')
-std_X = np.load(NOTEBOOKS_PATH + 'deeplie/content/fer2013/std_X.npy')
+mean_X = np.load(NOTEBOOKS_PATH + 'deeplie/content/fer2013/mean_x.npy')
+std_X = np.load(NOTEBOOKS_PATH + 'deeplie/content/fer2013/std_x.npy')
 
 def extract_frames_mediapipe(video_path, num_frames=300):
     """

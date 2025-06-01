@@ -3,8 +3,8 @@
 # ===================================================================================================
 
 # Real-esrgan model
-git+https://github.com/sberbank-ai/Real-ESRGAN.git
-huggingface_hub==0.14.1
+# git+https://github.com/sberbank-ai/Real-ESRGAN.git
+# huggingface_hub==0.14.1
 
 # Face detect, align, cropping
 mediapipe
@@ -15,4 +15,3 @@ scikit-image
 mediapipe
 Pillow
 torch
-opencv-python
