@@ -8,6 +8,44 @@ This project develops an AI-powered platform for real-time deception detection b
 
 Deception detection is crucial in various contexts including legal proceedings, security screenings, and interviews. Current high-performing systems often employ multimodal approaches that integrate multiple data types, making them computationally intensive and expensive. This project addresses these limitations by focusing on micro-expressions—involuntary facial movements that can reveal concealed emotions—to create a more streamlined, accessible solution.
 
+## Demo
+### Home Page Interface
+<img width="630" height="378" alt="image" src="https://github.com/user-attachments/assets/6e3a812d-38de-4ec1-9d28-516b15e2cb40" />
+
+| # | Description                                                           |
+|---|-----------------------------------------------------------------------|
+| 1 | A navigation button that redirects users to the Model page.           |
+| 2 | A navigation button that links to the About page.                     |
+| 3 | An interactive carousel that automatically cycles through key highlights of the system. |
+
+### Model Page Interface
+<img width="690" height="430" alt="image" src="https://github.com/user-attachments/assets/02ad6b65-4098-4369-bd56-722bdef2f9ad" />
+
+| # | Layout                      | Description                                                                     |
+|---|-----------------------------|---------------------------------------------------------------------------------|
+| 1 | Video Preview Area          | Displays the uploaded or recorded video for review before analysis.             |
+| 2 | Input Selection Dropdown    | Enables selection between file upload and live webcam recording.                |
+| 3 | Emotion Radar Chart         | Visualizes detected emotional expressions in a radar chart format.              |
+| 4 | Prediction History Table    | Logs previous predictions with timestamps, file names, labels, and confidence.  |
+| 5 | Heatmap Visualization       | Highlights emotional intensity across frames and key facial regions.            |
+
+### User Manual
+<img width="724" height="438" alt="image" src="https://github.com/user-attachments/assets/fda822f8-60ad-443d-b91a-6a75e01eeb1c" />
+
+The page is built with notion; can be accessed [here](https://v2-embednotion.com/1f70e245d30380128698d5ec4679dc9e)
+
+## Features
+
+- Real-time deception detection using facial micro-expressions.
+- Research-backed model trained on facial micro-expression datasets.
+- Cost-effective alternative to multimodal deception detection systems.
+- Provides real-time deception detection using only facial expressions.
+- Upload pre-recorded MP4 videos or record live videos directly through a webcam.
+- Displays a clear "deceptive" or "truthful" label with a confidence score.
+- Offers emotion radar charts and facial heatmaps to visualize detected emotions and the model's focus.
+- Review a history of past predictions and export summaries as PDF reports.
+- Features an intuitive and easy-to-navigate web interface.
+
 ## Project Structure
 
 ```
@@ -207,13 +245,6 @@ Make sure to replace `path/to/your/file.npy` with the actual path to your `.npy`
 
 The preprocessed datasets used for training and testing the model can be found in the following Google Drive folder:
 https://drive.google.com/drive/u/1/folders/1oOCvq37bn4Dg8MdXT3XoRhu-ClcbCMIG
-
-## Features
-
-- Real-time deception detection using facial micro-expressions
-- Interactive web interface for analysis and results visualization
-- Research-backed model trained on facial micro-expression datasets
-- Cost-effective alternative to multimodal deception detection systems
 
 ## Contributors
 
